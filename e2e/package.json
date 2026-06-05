@@ -1,0 +1,13 @@
+{
+  "name": "hwptopdf-e2e",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Gated end-to-end tests. Run manually against a running docker-compose stack.",
+  "scripts": {
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.0"
+  }
+}
