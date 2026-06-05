@@ -19,7 +19,8 @@
     "@fastify/multipart": "^9.0.1",
     "@hwptopdf/shared": "workspace:*",
     "@prisma/client": "^6.1.0",
-    "fastify": "^5.1.0"
+    "fastify": "^5.1.0",
+    "fastify-plugin": "^5.0.1"
   },
   "devDependencies": {
     "@types/node": "^22.9.0",

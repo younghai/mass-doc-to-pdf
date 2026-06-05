@@ -1,4 +1,10 @@
-import { ConversionError, type Converter, type ConvertInput, type FetchFn } from "../types.js";
+import {
+  ConversionError,
+  toFilePart,
+  type Converter,
+  type ConvertInput,
+  type FetchFn,
+} from "../types.js";
 
 export interface HancomConfig {
   baseUrl: string;
@@ -25,7 +31,7 @@ export class HancomConverter implements Converter {
       );
     }
     const form = new FormData();
-    form.append("file", new File([data], filename));
+    form.append("file", new File([toFilePart(data)], filename));
     const url = `${this.cfg.baseUrl}/v1/convert/pdf`;
     let res: Response;
     try {

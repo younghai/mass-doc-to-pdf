@@ -1,4 +1,10 @@
-import { ConversionError, type Converter, type ConvertInput, type FetchFn } from "../types.js";
+import {
+  ConversionError,
+  toFilePart,
+  type Converter,
+  type ConvertInput,
+  type FetchFn,
+} from "../types.js";
 
 export class GotenbergConverter implements Converter {
   readonly name = "gotenberg";
@@ -9,7 +15,7 @@ export class GotenbergConverter implements Converter {
 
   async convert({ filename, data }: ConvertInput): Promise<Buffer> {
     const form = new FormData();
-    form.append("files", new File([data], filename));
+    form.append("files", new File([toFilePart(data)], filename));
     const url = `${this.baseUrl}/forms/libreoffice/convert`;
     let res: Response;
     try {

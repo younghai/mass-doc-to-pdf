@@ -1,4 +1,10 @@
-import { ConversionError, type Converter, type ConvertInput, type FetchFn } from "../types.js";
+import {
+  ConversionError,
+  toFilePart,
+  type Converter,
+  type ConvertInput,
+  type FetchFn,
+} from "../types.js";
 
 export class H2OrestartConverter implements Converter {
   readonly name = "h2orestart";
@@ -9,7 +15,7 @@ export class H2OrestartConverter implements Converter {
 
   async convert({ filename, data }: ConvertInput): Promise<Buffer> {
     const form = new FormData();
-    form.append("file", new File([data], filename));
+    form.append("file", new File([toFilePart(data)], filename));
     const url = `${this.baseUrl}/convert`;
     let res: Response;
     try {
