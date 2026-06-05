@@ -1,0 +1,57 @@
+services:
+  minio:
+    image: minio/minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minio
+      MINIO_ROOT_PASSWORD: minio12345
+    ports: ["9000:9000", "9001:9001"]
+    volumes: ["minio-data:/data"]
+
+  createbucket:
+    image: minio/mc
+    depends_on: [minio]
+    entrypoint: >
+      /bin/sh -c "until mc alias set m http://minio:9000 minio minio12345; do sleep 1; done;
+      mc mb -p m/hwptopdf; exit 0;"
+
+  gotenberg:
+    image: gotenberg/gotenberg:8
+    command: ["gotenberg", "--api-timeout=120s"]
+    ports: ["3000:3000"]
+
+  hwp-sidecar:
+    build: ./hwp-sidecar
+    ports: ["8080:8080"]
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    environment:
+      DATABASE_URL: file:/data/app.db
+      GOTENBERG_URL: http://gotenberg:3000
+      HWP_SIDECAR_URL: http://hwp-sidecar:8080
+      S3_ENDPOINT: http://minio:9000
+      S3_BUCKET: hwptopdf
+      S3_ACCESS_KEY: minio
+      S3_SECRET_KEY: minio12345
+      AUTH_SECRET: ${AUTH_SECRET}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+      WEB_ORIGIN: http://localhost:8081
+      PORT: "8000"
+    volumes: ["api-data:/data"]
+    ports: ["8000:8000"]
+    depends_on: [gotenberg, hwp-sidecar, minio, createbucket]
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    ports: ["8081:80"]
+    depends_on: [api]
+
+volumes:
+  minio-data: {}
+  api-data: {}

@@ -31,3 +31,210 @@ a {
   margin: 0 auto;
   padding: 1.5rem;
 }
+
+/* ---- Login ---- */
+.login {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+}
+.login-card {
+  background: var(--surface);
+  padding: 2.5rem;
+  border-radius: 16px;
+  text-align: center;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.35);
+}
+.login-card p {
+  color: var(--muted);
+  margin: 0.5rem 0 1.75rem;
+}
+.btn-google {
+  display: inline-block;
+  background: #fff;
+  color: #1f2937;
+  font-weight: 600;
+  padding: 0.7rem 1.5rem;
+  border-radius: 10px;
+}
+
+/* ---- Top bar ---- */
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  padding: 0.9rem 1.5rem;
+  background: var(--surface);
+  border-bottom: 1px solid var(--surface-2);
+}
+.topbar .brand {
+  font-weight: 800;
+  font-size: 1.15rem;
+}
+.topbar nav {
+  display: flex;
+  gap: 1rem;
+}
+.topbar nav a.active {
+  color: var(--primary);
+  font-weight: 600;
+}
+.topbar .user {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+/* ---- Buttons ---- */
+.btn {
+  display: inline-block;
+  background: var(--primary);
+  color: #fff;
+  padding: 0.55rem 1.1rem;
+  border-radius: 8px;
+  font-weight: 600;
+}
+
+/* ---- Dropzone ---- */
+.dropzone {
+  border: 2px dashed var(--surface-2);
+  border-radius: 14px;
+  padding: 3rem 1.5rem;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.dropzone.over {
+  border-color: var(--primary);
+  background: rgba(99, 102, 241, 0.08);
+}
+.dropzone small {
+  color: var(--muted);
+}
+.upload-result {
+  margin-top: 1.25rem;
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  background: var(--surface);
+  padding: 0.9rem 1.1rem;
+  border-radius: 10px;
+}
+
+/* ---- Status pill ---- */
+.pill {
+  display: inline-block;
+  padding: 0.15rem 0.65rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #0b1120;
+}
+.pill-success {
+  background: var(--success);
+}
+.pill-failed {
+  background: var(--danger);
+  color: #fff;
+}
+.pill-pending {
+  background: var(--pending);
+}
+
+/* ---- Tabs ---- */
+.tabs {
+  display: flex;
+  gap: 0.5rem;
+  margin: 1rem 0;
+}
+.tabs button {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--surface-2);
+  padding: 0.4rem 1rem;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.tabs button.active {
+  background: var(--primary);
+  border-color: var(--primary);
+}
+
+/* ---- Jobs table ---- */
+.jobs-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.jobs-table th,
+.jobs-table td {
+  text-align: left;
+  padding: 0.65rem 0.75rem;
+  border-bottom: 1px solid var(--surface-2);
+  font-size: 0.92rem;
+}
+.jobs-table th {
+  color: var(--muted);
+  font-weight: 600;
+}
+.empty {
+  color: var(--muted);
+  padding: 1.5rem 0;
+}
+
+/* ---- Dashboard ---- */
+.dash-head,
+.detail-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.cards {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1rem;
+  margin: 1.25rem 0;
+}
+.stat-card {
+  background: var(--surface);
+  border-radius: 12px;
+  padding: 1.25rem;
+}
+.stat-value {
+  font-size: 1.9rem;
+  font-weight: 800;
+}
+.stat-label {
+  color: var(--muted);
+  margin-top: 0.25rem;
+}
+
+/* ---- Detail ---- */
+.props {
+  display: grid;
+  grid-template-columns: 9rem 1fr;
+  gap: 0.5rem 1rem;
+  background: var(--surface);
+  padding: 1.25rem;
+  border-radius: 12px;
+  margin: 1rem 0;
+}
+.props dt {
+  color: var(--muted);
+}
+.props dd {
+  margin: 0;
+  word-break: break-all;
+}
+.error {
+  color: var(--danger);
+}
+
+@media (max-width: 720px) {
+  .cards {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
