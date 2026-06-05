@@ -18,7 +18,9 @@ services:
   gotenberg:
     image: gotenberg/gotenberg:8
     command: ["gotenberg", "--api-timeout=120s"]
-    ports: ["3000:3000"]
+    # Host 3000 is commonly taken by local dev servers; expose on 3009 instead.
+    # The api talks to gotenberg over the internal network (http://gotenberg:3000).
+    ports: ["3009:3000"]
 
   hwp-sidecar:
     build: ./hwp-sidecar
