@@ -18,7 +18,16 @@ def convert():
         src = pathlib.Path(d) / safe_upload_name(f.filename)
         f.save(src)
         result = subprocess.run(
-            ["soffice", "--headless", "--convert-to", "pdf", "--outdir", d, str(src)],
+            [
+                "soffice",
+                f"-env:UserInstallation=file://{d}/louser",
+                "--headless",
+                "--convert-to",
+                "pdf",
+                "--outdir",
+                d,
+                str(src),
+            ],
             capture_output=True,
             timeout=120,
         )

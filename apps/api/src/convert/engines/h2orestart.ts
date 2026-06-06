@@ -21,7 +21,10 @@ import subprocess
 import sys
 import tempfile
 import zipfile
+import re
+import struct
 import xml.etree.ElementTree as ET
+import zlib
 
 NS = {
     "w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
@@ -110,10 +113,205 @@ def read_hwpx(zf):
     return [text_from_xml(zf.read(name)) for name in names]
 
 
+def clean_text(value):
+    value = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]+", " ", value)
+    return " ".join(value.split())
+
+
+def utf16_strings(data, min_len=4):
+    try:
+        decoded = data.decode("utf-16le", errors="ignore")
+    except UnicodeDecodeError:
+        return []
+    values = []
+    current = []
+    for ch in decoded:
+        if ch in "\r\n\t" or (ch.isprintable() and ch not in "\uffff\ufffe"):
+            current.append(ch)
+            continue
+        if len(current) >= min_len:
+            value = clean_text("".join(current))
+            if value:
+                values.append(value)
+        current = []
+    if len(current) >= min_len:
+        value = clean_text("".join(current))
+        if value:
+            values.append(value)
+    return values
+
+
+def sector_chain(start, fat, end_mark=0xFFFFFFFE):
+    chain = []
+    seen = set()
+    sid = start
+    while sid not in seen and 0 <= sid < len(fat) and sid != end_mark:
+        seen.add(sid)
+        chain.append(sid)
+        sid = fat[sid]
+    return chain
+
+
+def cfb_streams(data):
+    if len(data) < 512 or data[:8] != b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1":
+        return {}
+    sector_size = 1 << struct.unpack_from("<H", data, 30)[0]
+    mini_sector_size = 1 << struct.unpack_from("<H", data, 32)[0]
+    first_dir = struct.unpack_from("<i", data, 48)[0]
+    cutoff = struct.unpack_from("<I", data, 56)[0]
+    first_minifat = struct.unpack_from("<i", data, 60)[0]
+    minifat_count = struct.unpack_from("<I", data, 64)[0]
+    difat = [sid for sid in struct.unpack_from("<109i", data, 76) if sid >= 0]
+
+    def sector(sid):
+        start = (sid + 1) * sector_size
+        return data[start:start + sector_size]
+
+    fat = []
+    for sid in difat:
+        fat.extend(struct.unpack("<%di" % (sector_size // 4), sector(sid)))
+
+    def read_regular(start, size=None):
+        body = b"".join(sector(sid) for sid in sector_chain(start, fat))
+        return body if size is None else body[:size]
+
+    directory = read_regular(first_dir)
+    entries = []
+    for offset in range(0, len(directory), 128):
+        item = directory[offset:offset + 128]
+        if len(item) < 128:
+            continue
+        name_len = struct.unpack_from("<H", item, 64)[0]
+        raw_name = item[:max(0, name_len - 2)]
+        name = raw_name.decode("utf-16le", errors="ignore")
+        entries.append({
+            "name": name,
+            "type": item[66],
+            "left": struct.unpack_from("<i", item, 68)[0],
+            "right": struct.unpack_from("<i", item, 72)[0],
+            "child": struct.unpack_from("<i", item, 76)[0],
+            "start": struct.unpack_from("<i", item, 116)[0],
+            "size": struct.unpack_from("<Q", item, 120)[0],
+        })
+
+    if not entries:
+        return {}
+
+    root = entries[0]
+    minifat = []
+    if first_minifat >= 0 and minifat_count:
+        body = b"".join(sector(sid) for sid in sector_chain(first_minifat, fat))
+        minifat = list(struct.unpack("<%di" % (len(body) // 4), body))
+    ministream = read_regular(root["start"], root["size"]) if root["start"] >= 0 else b""
+
+    def read_mini(start, size):
+        chunks = []
+        for sid in sector_chain(start, minifat):
+            begin = sid * mini_sector_size
+            chunks.append(ministream[begin:begin + mini_sector_size])
+        return b"".join(chunks)[:size]
+
+    streams = {}
+
+    def walk(idx, parent):
+        if idx < 0 or idx >= len(entries):
+            return
+        entry = entries[idx]
+        walk(entry["left"], parent)
+        name = entry["name"]
+        path = "%s/%s" % (parent, name) if parent and name else name
+        if entry["type"] in {1, 5}:
+            child_parent = parent if entry["type"] == 5 else path
+            walk(entry["child"], child_parent)
+        elif entry["type"] == 2 and entry["start"] >= 0:
+            if entry["size"] < cutoff and minifat:
+                streams[path] = read_mini(entry["start"], entry["size"])
+            else:
+                streams[path] = read_regular(entry["start"], entry["size"])
+        walk(entry["right"], parent)
+
+    walk(root["child"], "")
+    return streams
+
+
+def hwp_record_text(data):
+    values = []
+    pos = 0
+    while pos + 4 <= len(data):
+        header = struct.unpack_from("<I", data, pos)[0]
+        pos += 4
+        tag = header & 0x3ff
+        size = (header >> 20) & 0xfff
+        if size == 0xfff:
+            if pos + 4 > len(data):
+                break
+            size = struct.unpack_from("<I", data, pos)[0]
+            pos += 4
+        if size < 0 or pos + size > len(data):
+            break
+        payload = data[pos:pos + size]
+        pos += size
+        if tag == 67:
+            values.extend(utf16_strings(payload, 2))
+    return values
+
+
+def read_hwp(path):
+    raw = open(path, "rb").read()
+    streams = cfb_streams(raw)
+    header = streams.get("FileHeader", b"")
+    compressed = True
+    if len(header) >= 40:
+        compressed = bool(struct.unpack_from("<I", header, 36)[0] & 1)
+    body_names = sorted(name for name in streams if name.lower().startswith("bodytext/section"))
+    lines = []
+    for name in body_names:
+        body = streams[name]
+        candidates = []
+        if compressed:
+            try:
+                candidates.append(zlib.decompress(body, -15))
+            except zlib.error:
+                candidates.append(body)
+        else:
+            candidates.append(body)
+        for candidate in candidates:
+            lines.extend(hwp_record_text(candidate))
+            if not lines:
+                lines.extend(utf16_strings(candidate))
+    if not lines:
+        lines = utf16_strings(raw)
+    if not lines:
+        raise RuntimeError("could not extract text from binary HWP; install Hancom/LibreOffice/Gotenberg for full rendering")
+    return lines
+
+
+def render_with_rhwp(path, out_path):
+    try:
+        import rhwp
+    except Exception:
+        return False
+    try:
+        document = rhwp.parse(path)
+        if hasattr(document, "export_pdf"):
+            document.export_pdf(out_path)
+            return os.path.exists(out_path) and os.path.getsize(out_path) > 0
+        if hasattr(document, "render_pdf"):
+            pdf = document.render_pdf()
+            with open(out_path, "wb") as fh:
+                fh.write(pdf)
+            return os.path.exists(out_path) and os.path.getsize(out_path) > 0
+    except Exception:
+        return False
+    return False
+
+
 def extract_lines(path):
     lower = path.lower()
-    if lower.endswith(".doc") or lower.endswith(".hwp"):
-        raise RuntimeError("legacy binary formats require LibreOffice, Gotenberg, Hancom, or HWPX normalization")
+    if lower.endswith(".doc"):
+        raise RuntimeError("legacy .doc requires LibreOffice or Gotenberg")
+    if lower.endswith(".hwp"):
+        return read_hwp(path)
     with zipfile.ZipFile(path) as zf:
         if lower.endswith(".docx"):
             lines = read_docx(zf)
@@ -167,6 +365,10 @@ p { margin: 0 0 8px; white-space: pre-wrap; }
 
 def main():
     input_path, output_path = sys.argv[1], sys.argv[2]
+    lower = input_path.lower()
+    if lower.endswith(".hwp") or lower.endswith(".hwpx"):
+        if render_with_rhwp(input_path, output_path):
+            return
     render_pdf(extract_lines(input_path), output_path)
 
 

@@ -13,7 +13,10 @@ set -a
 source "$ENV_FILE"
 set +a
 
+mkdir -p "$ROOT/data/objects"
+
 cd "$ROOT/apps/api"
+corepack pnpm exec prisma generate
 corepack pnpm exec prisma migrate deploy
 
 echo "Database schema is up to date."

@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import { randomUUID } from "node:crypto";
 import { fileMeta } from "../detect/detectFormat.js";
 import { ConversionError, type Converter } from "../convert/types.js";
 import type { AppDeps } from "../app.js";
@@ -7,6 +8,11 @@ function errorMessage(err: unknown): string {
   if (err instanceof ConversionError) return err.message;
   if (err instanceof Error) return err.message;
   return "unknown conversion failure";
+}
+
+function sourceObjectKey(userId: string, extension: string): string {
+  const suffix = extension.replace(/[^a-z0-9]/gi, "").toLowerCase() || "bin";
+  return `${userId}/src/${Date.now()}-${randomUUID()}.${suffix}`;
 }
 
 async function finishConversion(
@@ -54,7 +60,7 @@ export function registerConvert(app: FastifyInstance, deps: AppDeps) {
       return reply.code(400).send({ error: (e as Error).message });
     }
 
-    const sourceKey = `${user.id}/src/${Date.now()}-${file.filename}`;
+    const sourceKey = sourceObjectKey(user.id, meta.extension);
     await deps.storage.put(sourceKey, data, meta.mimeType);
     const job = await deps.jobs.create(user.id, {
       filename: file.filename,

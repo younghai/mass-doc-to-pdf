@@ -11,7 +11,9 @@ mkdir -p "$APP_DIR"
 cd "$ROOT"
 tar \
   --exclude ".git" \
+  --exclude ".github" \
   --exclude ".DS_Store" \
+  --exclude "._*" \
   --exclude ".claude" \
   --exclude ".codex" \
   --exclude ".debug-journal.md" \
@@ -20,6 +22,7 @@ tar \
   --exclude ".omc" \
   --exclude ".omx/state" \
   --exclude "node_modules" \
+  --exclude ".pnpm-store" \
   --exclude "apps/web/dist" \
   --exclude "apps/api/dist" \
   --exclude "packages/shared/dist" \

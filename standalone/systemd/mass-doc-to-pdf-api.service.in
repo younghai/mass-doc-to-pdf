@@ -1,17 +1,17 @@
 [Unit]
 Description=mass-doc-to-pdf API
-After=network.target mass-doc-to-pdf-sidecar.service
-Requires=mass-doc-to-pdf-sidecar.service
+After=network.target
 
 [Service]
 Type=simple
 WorkingDirectory=__ROOT__/apps/api
 EnvironmentFile=__ROOT__/.env.standalone
-ExecStart=/usr/bin/corepack pnpm start
+# Run the prebuilt server directly (build.sh + init-db.sh handle generate/migrate).
+ExecStart=/usr/bin/node dist/server.js
 Restart=always
 RestartSec=5
-User=www-data
-Group=www-data
+User=__USER__
+Group=__USER__
 
 [Install]
 WantedBy=multi-user.target

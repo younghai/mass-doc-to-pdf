@@ -16,9 +16,11 @@ beforeAll(async () => {
 afterAll(() => db.cleanup());
 
 function makeApp(engine: Converter, authed = true) {
+  const put = vi.fn(async (_key: string, _body: Buffer, _contentType: string) => {});
+  const get = vi.fn(async (_key: string) => new Uint8Array());
   const storage = {
-    put: vi.fn(async () => {}),
-    get: vi.fn(async () => new Uint8Array()),
+    put,
+    get,
   };
   const deps: AppDeps = {
     registry: { forFormat: () => engine },
@@ -77,6 +79,26 @@ describe("POST /api/convert", () => {
     expect(running).toMatchObject({ status: "running" });
     const failed = await waitForJob(running.id, "failed");
     expect(failed?.error).toMatch(/backend/);
+  });
+
+  it("stores long Korean HWP filenames under a bounded object key", async () => {
+    const output = deferred<Buffer>();
+    const engine: Converter = { name: "builtin-office", convert: async () => output.promise };
+    const { app, storage } = makeApp(engine);
+    const filename = `${"붙임_인공지능_전환_컨설팅_지원사업_참여기업_모집_재공고문_".repeat(8)}.hwp`;
+    const hwpOleHeader = Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1, 0x00]);
+    const { body, headers } = multipartPayload(filename, hwpOleHeader);
+
+    const res = await app.inject({ method: "POST", url: "/api/convert", headers, payload: body });
+
+    expect(res.statusCode).toBe(202);
+    const running = res.json() as { id: string; filename: string };
+    expect(running.filename).toBe(filename);
+    const sourceKey = vi.mocked(storage.put).mock.calls[0]?.[0];
+    expect(sourceKey).toMatch(new RegExp(`^${userId}/src/\\d+-[a-f0-9-]+\\.hwp$`));
+    expect(sourceKey.length).toBeLessThan(120);
+    output.resolve(Buffer.from("%PDF-1.7"));
+    await waitForJob(running.id, "success");
   });
 
   it("returns 400 for unsupported extension", async () => {

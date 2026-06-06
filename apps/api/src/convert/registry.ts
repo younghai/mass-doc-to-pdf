@@ -29,7 +29,7 @@ export function buildRegistry(
 
   const hwp: Converter =
     overrides?.hwp ??
-    (cfg.hancom ? new HancomConverter(cfg.hancom) : new H2OrestartConverter(cfg.hwpSidecarUrl));
+    (cfg.hancom ? new HancomConverter(cfg.hancom) : hwpConverter(cfg));
 
   const table: Record<DocFormat, Converter> = { office, hwp };
   return { forFormat: (format) => table[format] };
@@ -43,5 +43,15 @@ function officeConverter(cfg: EngineConfig): Converter {
       return new BuiltinOfficeConverter();
     case "gotenberg":
       return new GotenbergConverter(cfg.gotenbergUrl);
+  }
+}
+
+function hwpConverter(cfg: EngineConfig): Converter {
+  switch (cfg.officeEngine) {
+    case "builtin":
+      return new BuiltinOfficeConverter();
+    case "hwp-sidecar":
+    case "gotenberg":
+      return new H2OrestartConverter(cfg.hwpSidecarUrl);
   }
 }

@@ -30,6 +30,10 @@ describe("buildRegistry", () => {
     const r = buildRegistry({ ...base, officeEngine: "builtin" });
     expect(r.forFormat("office").name).toBe("builtin-office");
   });
+  it("routes hwp documents to the builtin source-only converter when sidecar is not used", () => {
+    const r = buildRegistry({ ...base, officeEngine: "builtin" });
+    expect(r.forFormat("hwp").name).toBe("builtin-office");
+  });
   it("accepts overrides for tests", () => {
     const fake = { name: "FAKE", async convert() { return Buffer.from("x"); } };
     expect(buildRegistry(base, { office: fake }).forFormat("office").name).toBe("FAKE");

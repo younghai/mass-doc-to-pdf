@@ -6,12 +6,13 @@ After=network.target
 Type=simple
 WorkingDirectory=__ROOT__
 EnvironmentFile=__ROOT__/.env.standalone
-Environment=HOME=/tmp
+# Real user home so LibreOffice/Java (H2Orestart) can build their profile.
+Environment=HOME=__HOME__
 ExecStart=/bin/sh -c 'HOST="${SIDECAR_HOST:-127.0.0.1}" PORT="${SIDECAR_PORT:-18080}" python3 __ROOT__/hwp-sidecar/app.py'
 Restart=always
 RestartSec=5
-User=www-data
-Group=www-data
+User=__USER__
+Group=__USER__
 
 [Install]
 WantedBy=multi-user.target
