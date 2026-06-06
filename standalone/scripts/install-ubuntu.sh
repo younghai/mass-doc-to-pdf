@@ -13,6 +13,7 @@ apt-get install -y --no-install-recommends \
   gnupg \
   nginx \
   openssl \
+  sqlite3 \
   python3 \
   python3-flask \
   default-jre \
