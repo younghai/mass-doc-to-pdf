@@ -1,7 +1,0 @@
-{
-  "tool_name": "Bash",
-  "tool_input_preview": "{\"command\":\"which claude; echo \\\"---\\\"; ls -la $(which claude) 2>/dev/null; echo \\\"---npm global---\\\"; npm ls -g @anthropic-ai/claude-code 2>/dev/null\",\"description\":\"Determine Claude Code install met...",
-  "error": "Exit code 1\n/Users/young/.local/bin/claude\n---\nlrwxr-xr-x@ 1 young  staff  50  5 23 23:10 /Users/young/.local/bin/claude -> /Users/young/.nvm/versions/node/v24.6.0/bin/claude\n---npm global---\n/Users/young/.hermes/node/lib\n└── (empty)",
-  "timestamp": "2026-06-05T06:58:16.673Z",
-  "retry_count": 1
-}

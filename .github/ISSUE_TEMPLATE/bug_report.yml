@@ -1,0 +1,57 @@
+name: Bug report
+description: Report a reproducible problem in hwptopdf.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What failed, and what did you expect instead?
+      placeholder: PPTX download fails with a 500 error after conversion.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Web UI
+        - API
+        - Conversion engine
+        - Docker/deployment
+        - Auth
+        - Documentation
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: List the exact actions, file type, and URL/route if possible.
+      placeholder: |
+        1. Open /service/upload
+        2. Upload a PPTX file
+        3. Click PDF download
+    validations:
+      required: true
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Error output or evidence
+      description: Paste logs, screenshots, status codes, or browser console messages.
+      render: shell
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      placeholder: |
+        OS:
+        Browser:
+        Docker/Colima version:
+        Node/pnpm version:

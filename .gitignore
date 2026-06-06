@@ -4,7 +4,11 @@ dist/
 .env
 .env.*
 !.env.example
+!.env.production.example
 .DS_Store
+.omc/
+.omx/state/
 tmp/
 apps/api/prisma/*.db
 apps/web/dist/
+e2e/test-results/

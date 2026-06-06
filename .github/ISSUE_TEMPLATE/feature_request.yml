@@ -1,0 +1,45 @@
+name: Feature request
+description: Propose a service, workflow, or UI improvement.
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or operator need
+      description: What service workflow should become easier, safer, or more visible?
+      placeholder: Operators need to convert a whole folder without uploading files one by one.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Describe the expected service flow and UI behavior.
+      placeholder: Add a folder batch conversion page with progress, skipped files, and job links.
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: What must be true before this is complete?
+      placeholder: |
+        - Menu item is visible.
+        - Files over 20 MB are rejected before upload.
+        - Each queued file links to its job detail page.
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Operational priority
+      options:
+        - Critical for launch
+        - Important for daily operation
+        - Useful improvement
+        - Later
+    validations:
+      required: true

@@ -1,0 +1,77 @@
+name: Publish Images to GHCR
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Image tag to publish. Defaults to the short commit SHA."
+        required: false
+        type: string
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    name: Build and publish Docker images
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve image names
+        run: |
+          repository="$(printf '%s' "${GITHUB_REPOSITORY}" | tr '[:upper:]' '[:lower:]')"
+          echo "IMAGE_PREFIX=ghcr.io/${repository}" >> "${GITHUB_ENV}"
+
+          if [ -n "${{ inputs.image_tag }}" ]; then
+            tag="${{ inputs.image_tag }}"
+          elif [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            tag="${GITHUB_REF_NAME}"
+          elif [ "${GITHUB_REF_NAME}" = "main" ]; then
+            tag="latest"
+          else
+            tag="${GITHUB_SHA::12}"
+          fi
+          echo "IMAGE_TAG=${tag}" >> "${GITHUB_ENV}"
+
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Build API image
+        run: |
+          docker build --file apps/api/Dockerfile \
+            --tag "${IMAGE_PREFIX}-api:${IMAGE_TAG}" \
+            --tag "${IMAGE_PREFIX}-api:${GITHUB_SHA::12}" \
+            .
+
+      - name: Build web image
+        run: |
+          docker build --file apps/web/Dockerfile \
+            --tag "${IMAGE_PREFIX}-web:${IMAGE_TAG}" \
+            --tag "${IMAGE_PREFIX}-web:${GITHUB_SHA::12}" \
+            .
+
+      - name: Build HWP sidecar image
+        run: |
+          docker build --file hwp-sidecar/Dockerfile \
+            --tag "${IMAGE_PREFIX}-hwp-sidecar:${IMAGE_TAG}" \
+            --tag "${IMAGE_PREFIX}-hwp-sidecar:${GITHUB_SHA::12}" \
+            hwp-sidecar
+
+      - name: Push images
+        run: |
+          docker push "${IMAGE_PREFIX}-api:${IMAGE_TAG}"
+          docker push "${IMAGE_PREFIX}-api:${GITHUB_SHA::12}"
+          docker push "${IMAGE_PREFIX}-web:${IMAGE_TAG}"
+          docker push "${IMAGE_PREFIX}-web:${GITHUB_SHA::12}"
+          docker push "${IMAGE_PREFIX}-hwp-sidecar:${IMAGE_TAG}"
+          docker push "${IMAGE_PREFIX}-hwp-sidecar:${GITHUB_SHA::12}"
