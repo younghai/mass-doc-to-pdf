@@ -8,6 +8,7 @@ import { AsposeConverter, type AsposeConfig } from "./engines/aspose.js";
 export interface EngineConfig {
   gotenbergUrl: string;
   hwpSidecarUrl: string;
+  officeEngine: "gotenberg" | "hwp-sidecar";
   hancom?: HancomConfig;
   aspose?: AsposeConfig;
 }
@@ -22,7 +23,9 @@ export function buildRegistry(
 ): Registry {
   const office: Converter =
     overrides?.office ??
-    (cfg.aspose ? new AsposeConverter(cfg.aspose) : new GotenbergConverter(cfg.gotenbergUrl));
+    (cfg.aspose
+      ? new AsposeConverter(cfg.aspose)
+      : officeConverter(cfg));
 
   const hwp: Converter =
     overrides?.hwp ??
@@ -30,4 +33,13 @@ export function buildRegistry(
 
   const table: Record<DocFormat, Converter> = { office, hwp };
   return { forFormat: (format) => table[format] };
+}
+
+function officeConverter(cfg: EngineConfig): Converter {
+  switch (cfg.officeEngine) {
+    case "hwp-sidecar":
+      return new H2OrestartConverter(cfg.hwpSidecarUrl);
+    case "gotenberg":
+      return new GotenbergConverter(cfg.gotenbergUrl);
+  }
 }

@@ -5,7 +5,7 @@ import { ensureDevAuthUser } from "./auth/devAuth.js";
 import { buildAuthConfig } from "./auth/authConfig.js";
 import { buildRegistry } from "./convert/registry.js";
 import { JobService } from "./jobs/jobService.js";
-import { S3Storage, makeS3Client } from "./storage/s3.js";
+import { LocalFileStorage, S3Storage, makeS3Client, type Storage } from "./storage/s3.js";
 import { loadAppConfig } from "./config.js";
 import { prisma } from "./db.js";
 
@@ -18,7 +18,10 @@ const authConfig = buildAuthConfig({
   secret: cfg.auth.secret,
 });
 
-const storage = new S3Storage(makeS3Client(cfg.s3), cfg.s3.bucket);
+const storage: Storage =
+  cfg.storage.kind === "local"
+    ? new LocalFileStorage(cfg.storage.root)
+    : new S3Storage(makeS3Client(cfg.s3), cfg.s3.bucket);
 const jobs = new JobService(prisma);
 const registry = buildRegistry(cfg.engines);
 

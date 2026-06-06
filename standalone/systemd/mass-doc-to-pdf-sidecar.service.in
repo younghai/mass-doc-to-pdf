@@ -1,0 +1,17 @@
+[Unit]
+Description=mass-doc-to-pdf LibreOffice/H2Orestart sidecar
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=__ROOT__
+EnvironmentFile=__ROOT__/.env.standalone
+Environment=HOME=/tmp
+ExecStart=/bin/sh -c 'HOST="${SIDECAR_HOST:-127.0.0.1}" PORT="${SIDECAR_PORT:-18080}" python3 __ROOT__/hwp-sidecar/app.py'
+Restart=always
+RestartSec=5
+User=www-data
+Group=www-data
+
+[Install]
+WantedBy=multi-user.target

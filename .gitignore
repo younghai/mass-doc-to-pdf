@@ -12,3 +12,5 @@ tmp/
 apps/api/prisma/*.db
 apps/web/dist/
 e2e/test-results/
+.debug-journal.md
+standalone/release/

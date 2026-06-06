@@ -130,6 +130,31 @@ cp .env.production.example .env.production
 
 자세한 절차와 필요한 GitHub Secrets는 [`.github/DEPLOYMENT.md`](.github/DEPLOYMENT.md)를 확인하세요.
 
+## Docker 없이 단독 서버 운영
+
+Docker를 쓰지 않는 서버에는 [`standalone/`](standalone/) 폴더를 사용합니다. 이 경로는 MinIO/Gotenberg 없이
+로컬 파일 저장소와 LibreOffice/H2Orestart sidecar만으로 서비스를 실행하도록 구성되어 있습니다.
+
+```bash
+# 선택: 서버로 복사할 독립 배포 폴더/tarball 생성
+standalone/scripts/package.sh
+
+cd /opt/mass-doc-to-pdf
+sudo standalone/scripts/install-ubuntu.sh
+cp standalone/env.example .env.standalone
+standalone/scripts/build.sh
+standalone/scripts/init-db.sh
+sudo standalone/scripts/install-systemd.sh
+standalone/scripts/smoke-test.sh
+```
+
+단독 운영 기본값:
+
+- API: `127.0.0.1:18010`
+- 변환 sidecar: `127.0.0.1:18080`
+- Web/Nginx: `80`
+- 데이터: `./data/app.db`, `./data/objects`
+
 ## API 계약
 
 | 메서드 · 경로 | 설명 |

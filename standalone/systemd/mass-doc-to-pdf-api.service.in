@@ -1,0 +1,17 @@
+[Unit]
+Description=mass-doc-to-pdf API
+After=network.target mass-doc-to-pdf-sidecar.service
+Requires=mass-doc-to-pdf-sidecar.service
+
+[Service]
+Type=simple
+WorkingDirectory=__ROOT__/apps/api
+EnvironmentFile=__ROOT__/.env.standalone
+ExecStart=/usr/bin/corepack pnpm start
+Restart=always
+RestartSec=5
+User=www-data
+Group=www-data
+
+[Install]
+WantedBy=multi-user.target

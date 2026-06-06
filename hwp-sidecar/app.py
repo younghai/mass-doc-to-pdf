@@ -1,8 +1,10 @@
+import os
 import pathlib
 import subprocess
 import tempfile
 
 from flask import Flask, abort, request, send_file
+from safe_filename import safe_upload_name
 
 app = Flask(__name__)
 
@@ -13,7 +15,7 @@ def convert():
     if not f:
         abort(400, "field 'file' required")
     with tempfile.TemporaryDirectory() as d:
-        src = pathlib.Path(d) / (f.filename or "input")
+        src = pathlib.Path(d) / safe_upload_name(f.filename)
         f.save(src)
         result = subprocess.run(
             ["soffice", "--headless", "--convert-to", "pdf", "--outdir", d, str(src)],
@@ -32,4 +34,4 @@ def health():
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8080)
+    app.run(host=os.getenv("HOST", "0.0.0.0"), port=int(os.getenv("PORT", "8080")))

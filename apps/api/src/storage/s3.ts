@@ -1,8 +1,40 @@
 import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { dirname, isAbsolute, join, normalize, relative, sep } from "node:path";
 
 export interface Storage {
   put(key: string, body: Buffer, contentType: string): Promise<void>;
   get(key: string): Promise<Uint8Array>;
+}
+
+function safeObjectPath(root: string, key: string): string {
+  if (key.split(/[\\/]+/).some((part) => part === "." || part === "..")) {
+    throw new Error(`invalid storage key: ${key}`);
+  }
+  const normalized = normalize(key);
+  if (isAbsolute(normalized) || normalized === ".." || normalized.startsWith(`..${sep}`)) {
+    throw new Error(`invalid storage key: ${key}`);
+  }
+  const path = join(root, normalized);
+  const rel = relative(root, path);
+  if (rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
+    throw new Error(`invalid storage key: ${key}`);
+  }
+  return path;
+}
+
+export class LocalFileStorage implements Storage {
+  constructor(private readonly root: string) {}
+
+  async put(key: string, body: Buffer, _contentType: string): Promise<void> {
+    const path = safeObjectPath(this.root, key);
+    await mkdir(dirname(path), { recursive: true });
+    await writeFile(path, body);
+  }
+
+  async get(key: string): Promise<Uint8Array> {
+    return readFile(safeObjectPath(this.root, key));
+  }
 }
 
 export class S3Storage implements Storage {

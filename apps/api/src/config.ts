@@ -1,9 +1,19 @@
 import type { EngineConfig } from "./convert/registry.js";
 
+function officeEngine(env: NodeJS.ProcessEnv): EngineConfig["officeEngine"] {
+  switch (env.OFFICE_ENGINE) {
+    case "hwp-sidecar":
+      return "hwp-sidecar";
+    default:
+      return "gotenberg";
+  }
+}
+
 export function loadEngineConfig(env: NodeJS.ProcessEnv): EngineConfig {
   const cfg: EngineConfig = {
     gotenbergUrl: env.GOTENBERG_URL ?? "http://localhost:3000",
     hwpSidecarUrl: env.HWP_SIDECAR_URL ?? "http://localhost:8080",
+    officeEngine: officeEngine(env),
   };
 
   if (env.HANCOM_BASE_URL && env.HANCOM_API_KEY) {
@@ -34,9 +44,14 @@ export interface AuthConfigValues {
   devAuth: boolean;
 }
 
+export type StorageConfig =
+  | { readonly kind: "s3" }
+  | { readonly kind: "local"; readonly root: string };
+
 export interface AppConfig {
   engines: EngineConfig;
   s3: S3Config;
+  storage: StorageConfig;
   auth: AuthConfigValues;
   webOrigin: string;
   port: number;
@@ -55,6 +70,10 @@ export function loadAppConfig(env: NodeJS.ProcessEnv): AppConfig {
       secretKey: env.S3_SECRET_KEY ?? "minio12345",
       region: env.S3_REGION ?? "us-east-1",
     },
+    storage:
+      env.STORAGE_DRIVER === "local" || env.LOCAL_STORAGE_ROOT
+        ? { kind: "local", root: env.LOCAL_STORAGE_ROOT ?? "./data/objects" }
+        : { kind: "s3" },
     auth: {
       googleId: env.GOOGLE_CLIENT_ID ?? "",
       googleSecret: env.GOOGLE_CLIENT_SECRET ?? "",

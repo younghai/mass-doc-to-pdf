@@ -2,7 +2,11 @@ import { describe, it, expect } from "vitest";
 import { buildRegistry, type EngineConfig } from "./registry.js";
 
 describe("buildRegistry", () => {
-  const base: EngineConfig = { gotenbergUrl: "http://g", hwpSidecarUrl: "http://h" };
+  const base: EngineConfig = {
+    gotenbergUrl: "http://g",
+    hwpSidecarUrl: "http://h",
+    officeEngine: "gotenberg",
+  };
   it("defaults office->gotenberg, hwp->h2orestart", () => {
     const r = buildRegistry(base);
     expect(r.forFormat("office").name).toBe("gotenberg");
@@ -16,6 +20,11 @@ describe("buildRegistry", () => {
     });
     expect(r.forFormat("hwp").name).toBe("hancom");
     expect(r.forFormat("office").name).toBe("aspose");
+  });
+  it("can route office documents to the LibreOffice sidecar for standalone deployment", () => {
+    const r = buildRegistry({ ...base, officeEngine: "hwp-sidecar" });
+    expect(r.forFormat("office").name).toBe("h2orestart");
+    expect(r.forFormat("hwp").name).toBe("h2orestart");
   });
   it("accepts overrides for tests", () => {
     const fake = { name: "FAKE", async convert() { return Buffer.from("x"); } };

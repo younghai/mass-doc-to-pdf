@@ -15,7 +15,7 @@ RUN curl -fsSL -o /tmp/H2Orestart.oxt \
  && HOME=/tmp unopkg add --shared /tmp/H2Orestart.oxt \
  && rm -f /tmp/H2Orestart.oxt
 
-COPY app.py /srv/app.py
+COPY app.py safe_filename.py /srv/
 ENV HOME=/tmp
 EXPOSE 8080
 CMD ["python3", "/srv/app.py"]

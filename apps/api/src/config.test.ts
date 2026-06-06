@@ -6,8 +6,14 @@ describe("loadEngineConfig", () => {
     const cfg = loadEngineConfig({});
     expect(cfg.gotenbergUrl).toBe("http://localhost:3000");
     expect(cfg.hwpSidecarUrl).toBe("http://localhost:8080");
+    expect(cfg.officeEngine).toBe("gotenberg");
     expect(cfg.hancom).toBeUndefined();
     expect(cfg.aspose).toBeUndefined();
+  });
+
+  it("routes office conversion to the sidecar when configured for standalone mode", () => {
+    const cfg = loadEngineConfig({ OFFICE_ENGINE: "hwp-sidecar" });
+    expect(cfg.officeEngine).toBe("hwp-sidecar");
   });
 
   it("includes commercial config only when fully specified", () => {
@@ -28,9 +34,19 @@ describe("loadAppConfig", () => {
     const cfg = loadAppConfig({ AUTH_SECRET: "s" });
     expect(cfg.engines.gotenbergUrl).toBe("http://localhost:3000");
     expect(cfg.s3.bucket).toBe("hwptopdf");
+    expect(cfg.storage).toEqual({ kind: "s3" });
     expect(cfg.webOrigin).toBe("http://localhost:5173");
     expect(cfg.auth.secret).toBe("s");
     expect(cfg.auth.devAuth).toBe(false);
+  });
+
+  it("uses local file storage when configured for source-only deployment", () => {
+    const cfg = loadAppConfig({
+      AUTH_SECRET: "s",
+      STORAGE_DRIVER: "local",
+      LOCAL_STORAGE_ROOT: "/srv/hwptopdf/objects",
+    });
+    expect(cfg.storage).toEqual({ kind: "local", root: "/srv/hwptopdf/objects" });
   });
 
   it("enables local operations auth when DEV_AUTH=1", () => {
