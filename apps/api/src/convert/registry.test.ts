@@ -26,6 +26,10 @@ describe("buildRegistry", () => {
     expect(r.forFormat("office").name).toBe("h2orestart");
     expect(r.forFormat("hwp").name).toBe("h2orestart");
   });
+  it("can route office documents to the builtin source-only converter", () => {
+    const r = buildRegistry({ ...base, officeEngine: "builtin" });
+    expect(r.forFormat("office").name).toBe("builtin-office");
+  });
   it("accepts overrides for tests", () => {
     const fake = { name: "FAKE", async convert() { return Buffer.from("x"); } };
     expect(buildRegistry(base, { office: fake }).forFormat("office").name).toBe("FAKE");

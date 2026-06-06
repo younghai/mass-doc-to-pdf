@@ -1,14 +1,14 @@
 import type { DocFormat } from "@hwptopdf/shared";
 import type { Converter } from "./types.js";
 import { GotenbergConverter } from "./engines/gotenberg.js";
-import { H2OrestartConverter } from "./engines/h2orestart.js";
+import { BuiltinOfficeConverter, H2OrestartConverter } from "./engines/h2orestart.js";
 import { HancomConverter, type HancomConfig } from "./engines/hancom.js";
 import { AsposeConverter, type AsposeConfig } from "./engines/aspose.js";
 
 export interface EngineConfig {
   gotenbergUrl: string;
   hwpSidecarUrl: string;
-  officeEngine: "gotenberg" | "hwp-sidecar";
+  officeEngine: "gotenberg" | "hwp-sidecar" | "builtin";
   hancom?: HancomConfig;
   aspose?: AsposeConfig;
 }
@@ -39,6 +39,8 @@ function officeConverter(cfg: EngineConfig): Converter {
   switch (cfg.officeEngine) {
     case "hwp-sidecar":
       return new H2OrestartConverter(cfg.hwpSidecarUrl);
+    case "builtin":
+      return new BuiltinOfficeConverter();
     case "gotenberg":
       return new GotenbergConverter(cfg.gotenbergUrl);
   }

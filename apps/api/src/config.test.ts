@@ -16,6 +16,11 @@ describe("loadEngineConfig", () => {
     expect(cfg.officeEngine).toBe("hwp-sidecar");
   });
 
+  it("routes office conversion to the builtin engine for source-only deployments", () => {
+    const cfg = loadEngineConfig({ OFFICE_ENGINE: "builtin" });
+    expect(cfg.officeEngine).toBe("builtin");
+  });
+
   it("includes commercial config only when fully specified", () => {
     const cfg = loadEngineConfig({
       HANCOM_BASE_URL: "http://hancom",

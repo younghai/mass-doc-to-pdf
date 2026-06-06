@@ -4,6 +4,8 @@ function officeEngine(env: NodeJS.ProcessEnv): EngineConfig["officeEngine"] {
   switch (env.OFFICE_ENGINE) {
     case "hwp-sidecar":
       return "hwp-sidecar";
+    case "builtin":
+      return "builtin";
     default:
       return "gotenberg";
   }
