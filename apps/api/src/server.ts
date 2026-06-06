@@ -1,5 +1,7 @@
 import { buildApp } from "./app.js";
 import { authPlugin } from "./auth/plugin.js";
+import { devAuthPlugin } from "./auth/devPlugin.js";
+import { ensureDevAuthUser } from "./auth/devAuth.js";
 import { buildAuthConfig } from "./auth/authConfig.js";
 import { buildRegistry } from "./convert/registry.js";
 import { JobService } from "./jobs/jobService.js";
@@ -27,8 +29,13 @@ const app = buildApp({
   getSessionUser: (req) => app.getSessionUser(req),
 });
 
-// Mount Auth.js routes + the getSessionUser decorator onto the same instance.
-await app.register(authPlugin, { config: authConfig });
+if (cfg.auth.devAuth) {
+  const devUser = await ensureDevAuthUser(prisma);
+  await app.register(devAuthPlugin, { user: devUser });
+} else {
+  // Mount Auth.js routes + the getSessionUser decorator onto the same instance.
+  await app.register(authPlugin, { config: authConfig });
+}
 
 app
   .listen({ port: cfg.port, host: "0.0.0.0" })

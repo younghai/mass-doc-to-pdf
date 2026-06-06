@@ -9,9 +9,19 @@ vi.mock("./api/client", async (importOriginal) => {
   return { ...actual, api: { ...actual.api, session: vi.fn() } };
 });
 
-test("redirects to the login screen when unauthenticated", async () => {
+test("renders the public landing page at root", () => {
   vi.mocked(api.session).mockResolvedValue(null);
   renderWithProviders(<App />, { route: "/" });
+  expect(screen.getByRole("heading", { name: "hwptopdf" })).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "서비스 사용하기" })).toHaveAttribute(
+    "href",
+    "/service/upload",
+  );
+});
+
+test("redirects service routes to the login screen when unauthenticated", async () => {
+  vi.mocked(api.session).mockResolvedValue(null);
+  renderWithProviders(<App />, { route: "/service" });
   await waitFor(() =>
     expect(screen.getByRole("link", { name: /google/i })).toBeInTheDocument(),
   );

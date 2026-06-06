@@ -7,6 +7,7 @@ function appWith() {
   app.register(authPlugin, {
     config: {
       secret: "test-secret-test-secret-test-secret",
+      basePath: "/api/auth",
       providers: [],
       trustHost: true,
       session: { strategy: "jwt" },

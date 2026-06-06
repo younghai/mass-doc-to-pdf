@@ -10,7 +10,7 @@ let userId: string;
 const baseInput = (filename: string, format: DocFormat = "office"): CreateInput => ({
   filename,
   format,
-  extension: filename.split(".").pop()!,
+    extension: filename.slice(filename.lastIndexOf(".") + 1),
   mimeType: "application/octet-stream",
   sizeBytes: 123,
   sourceKey: `src/${filename}`,
@@ -33,14 +33,17 @@ describe("JobService", () => {
     expect(list[0]).not.toHaveProperty("sourceKey");
   });
 
-  it("marks success/failure and computes success rate", async () => {
+  it("marks running/success/failure and computes success rate", async () => {
     const a = await svc.create(userId, baseInput("a.docx"));
     const b = await svc.create(userId, baseInput("b.docx"));
+    const c = await svc.create(userId, baseInput("c.docx"));
+    await svc.markRunning(c.id, { engine: "gotenberg" });
     await svc.markSuccess(a.id, { engine: "gotenberg", durationMs: 900, outputKey: "out/a" });
     await svc.markFailed(b.id, { engine: "gotenberg", durationMs: 200, error: "backend 500" });
     const stats = await svc.stats(userId);
     expect(stats.success).toBeGreaterThanOrEqual(1);
     expect(stats.failed).toBeGreaterThanOrEqual(1);
+    expect(stats.running).toBeGreaterThanOrEqual(1);
     expect(stats.successRate).toBeGreaterThan(0);
     expect(stats.successRate).toBeLessThanOrEqual(1);
   });

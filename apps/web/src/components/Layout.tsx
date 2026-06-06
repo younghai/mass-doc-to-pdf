@@ -4,10 +4,16 @@ import { api } from "../api/client";
 import { useSession } from "../auth/useSession";
 
 const NAV = [
-  { to: "/", label: "대시보드" },
-  { to: "/upload", label: "업로드" },
-  { to: "/jobs", label: "변환 내역" },
-];
+  { to: "/service", label: "운영 현황" },
+  { to: "/service/upload", label: "문서 업로드" },
+  { to: "/service/batch", label: "폴더 일괄 변환" },
+  { to: "/service/jobs", label: "작업 큐" },
+] as const;
+
+function isActivePath(pathname: string, to: string): boolean {
+  if (to === "/service") return pathname === to;
+  return pathname === to || pathname.startsWith(`${to}/`);
+}
 
 export function Layout({ children }: { children: ReactNode }) {
   const { user } = useSession();
@@ -16,11 +22,12 @@ export function Layout({ children }: { children: ReactNode }) {
     <div className="layout">
       <header className="topbar">
         <Link to="/" className="brand">
-          hwptopdf
+          <span className="brand-mark">h</span>
+          <span>hwptopdf</span>
         </Link>
         <nav>
           {NAV.map((n) => (
-            <Link key={n.to} to={n.to} className={pathname === n.to ? "active" : ""}>
+            <Link key={n.to} to={n.to} className={isActivePath(pathname, n.to) ? "active" : ""}>
               {n.label}
             </Link>
           ))}

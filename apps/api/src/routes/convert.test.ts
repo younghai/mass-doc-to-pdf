@@ -29,18 +29,42 @@ function makeApp(engine: Converter, authed = true) {
   return { app: buildApp(deps), storage };
 }
 
+function deferred<T>() {
+  let resolveValue: (value: T) => void = () => {};
+  let rejectValue: (reason: Error) => void = () => {};
+  const promise = new Promise<T>((resolve, reject) => {
+    resolveValue = resolve;
+    rejectValue = reject;
+  });
+  return { promise, resolve: resolveValue, reject: rejectValue };
+}
+
+async function waitForJob(id: string, status: string) {
+  for (let i = 0; i < 20; i += 1) {
+    const raw = await db.prisma.conversionJob.findUnique({ where: { id } });
+    if (raw?.status === status) return raw;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error(`job ${id} did not reach ${status}`);
+}
+
 describe("POST /api/convert", () => {
-  it("converts a DOCX, stores source+output, records success", async () => {
-    const engine: Converter = { name: "gotenberg", async convert() { return Buffer.from("%PDF-1.7"); } };
+  it("returns a running DOCX job, then stores output and records success", async () => {
+    const output = deferred<Buffer>();
+    const engine: Converter = { name: "gotenberg", convert: async () => output.promise };
     const { app, storage } = makeApp(engine);
     const { body, headers } = multipartPayload("r.docx", Buffer.from("docbytes"));
     const res = await app.inject({ method: "POST", url: "/api/convert", headers, payload: body });
-    expect(res.statusCode).toBe(201);
-    expect(res.json()).toMatchObject({ filename: "r.docx", status: "success", engine: "gotenberg" });
+    expect(res.statusCode).toBe(202);
+    const running = res.json() as { id: string };
+    expect(running).toMatchObject({ filename: "r.docx", status: "running", engine: "gotenberg" });
+    expect(storage.put).toHaveBeenCalledTimes(1);
+    output.resolve(Buffer.from("%PDF-1.7"));
+    await waitForJob(running.id, "success");
     expect(storage.put).toHaveBeenCalledTimes(2);
   });
 
-  it("records a failed job when the engine throws", async () => {
+  it("returns a running job, then records failure when the engine throws", async () => {
     const engine: Converter = {
       name: "gotenberg",
       async convert() { throw new ConversionError("gotenberg", "backend 500"); },
@@ -48,8 +72,11 @@ describe("POST /api/convert", () => {
     const { app } = makeApp(engine);
     const { body, headers } = multipartPayload("r.docx", Buffer.from("x"));
     const res = await app.inject({ method: "POST", url: "/api/convert", headers, payload: body });
-    expect(res.statusCode).toBe(201);
-    expect(res.json()).toMatchObject({ status: "failed", error: expect.stringMatching(/backend/) });
+    expect(res.statusCode).toBe(202);
+    const running = res.json() as { id: string };
+    expect(running).toMatchObject({ status: "running" });
+    const failed = await waitForJob(running.id, "failed");
+    expect(failed?.error).toMatch(/backend/);
   });
 
   it("returns 400 for unsupported extension", async () => {

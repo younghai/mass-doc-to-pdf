@@ -1,4 +1,4 @@
-import type { JobDTO, StatsDTO, JobStatus } from "@hwptopdf/shared";
+import { MAX_UPLOAD_BYTES, type JobDTO, type StatsDTO, type JobStatus } from "@hwptopdf/shared";
 
 export interface SessionInfo {
   user?: { email?: string | null; name?: string | null; image?: string | null };
@@ -46,3 +46,5 @@ export const ACCEPTED_EXTENSIONS = [
   ".pptx",
   ".ppt",
 ];
+
+export { MAX_UPLOAD_BYTES };

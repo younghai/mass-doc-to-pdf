@@ -2,9 +2,11 @@ import type { ReactElement } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 import { useSession } from "./auth/useSession";
 import { Layout } from "./components/Layout";
+import { Landing } from "./pages/Landing";
 import { Login } from "./pages/Login";
 import { Dashboard } from "./pages/Dashboard";
 import { Upload } from "./pages/Upload";
+import { BatchUpload } from "./pages/BatchUpload";
 import { Jobs } from "./pages/Jobs";
 import { JobDetail } from "./pages/JobDetail";
 
@@ -18,9 +20,10 @@ function RequireAuth({ children }: { children: ReactElement }) {
 export function App() {
   return (
     <Routes>
+      <Route path="/" element={<Landing />} />
       <Route path="/login" element={<Login />} />
       <Route
-        path="/"
+        path="/service"
         element={
           <RequireAuth>
             <Dashboard />
@@ -28,7 +31,7 @@ export function App() {
         }
       />
       <Route
-        path="/upload"
+        path="/service/upload"
         element={
           <RequireAuth>
             <Upload />
@@ -36,7 +39,15 @@ export function App() {
         }
       />
       <Route
-        path="/jobs"
+        path="/service/batch"
+        element={
+          <RequireAuth>
+            <BatchUpload />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/service/jobs"
         element={
           <RequireAuth>
             <Jobs />
@@ -44,7 +55,7 @@ export function App() {
         }
       />
       <Route
-        path="/jobs/:id"
+        path="/service/jobs/:id"
         element={
           <RequireAuth>
             <JobDetail />

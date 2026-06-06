@@ -29,9 +29,9 @@ const job = (over: Partial<JobDTO>): JobDTO => ({
 function renderDetail() {
   return renderWithProviders(
     <Routes>
-      <Route path="/jobs/:id" element={<JobDetail />} />
+      <Route path="/service/jobs/:id" element={<JobDetail />} />
     </Routes>,
-    { route: "/jobs/1" },
+    { route: "/service/jobs/1" },
   );
 }
 
@@ -50,5 +50,12 @@ test("failed job shows the error reason and no download link", async () => {
   vi.mocked(api.getJob).mockResolvedValue(job({ status: "failed", error: "backend 500" }));
   renderDetail();
   await waitFor(() => expect(screen.getByText("backend 500")).toBeInTheDocument());
+  expect(screen.queryByRole("link", { name: /다운로드/ })).not.toBeInTheDocument();
+});
+
+test("running job shows progress guidance and no download link", async () => {
+  vi.mocked(api.getJob).mockResolvedValue(job({ status: "running", durationMs: null }));
+  renderDetail();
+  await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent(/진행 중/));
   expect(screen.queryByRole("link", { name: /다운로드/ })).not.toBeInTheDocument();
 });

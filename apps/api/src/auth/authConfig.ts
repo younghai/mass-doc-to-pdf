@@ -10,6 +10,7 @@ export function buildAuthConfig(opts: {
   secret: string;
 }): AuthConfig {
   return {
+    basePath: "/api/auth",
     secret: opts.secret,
     trustHost: true,
     // PrismaAdapter's generated types can drift from @auth/core; the runtime

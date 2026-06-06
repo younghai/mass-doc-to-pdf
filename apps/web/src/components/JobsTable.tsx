@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import type { JobDTO } from "@hwptopdf/shared";
+import { api } from "../api/client";
 import { StatusPill } from "./StatusPill";
 import { humanSize, formatDate } from "../format";
 
@@ -15,13 +16,14 @@ export function JobsTable({ jobs }: { jobs: JobDTO[] }) {
           <th>엔진</th>
           <th>날짜</th>
           <th>상태</th>
+          <th>작업</th>
         </tr>
       </thead>
       <tbody>
         {jobs.map((j) => (
           <tr key={j.id}>
             <td>
-              <Link to={`/jobs/${j.id}`}>{j.filename}</Link>
+              <Link to={`/service/jobs/${j.id}`}>{j.filename}</Link>
             </td>
             <td>{j.extension.toUpperCase()}</td>
             <td>{humanSize(j.sizeBytes)}</td>
@@ -29,6 +31,10 @@ export function JobsTable({ jobs }: { jobs: JobDTO[] }) {
             <td>{formatDate(j.createdAt)}</td>
             <td>
               <StatusPill status={j.status} />
+            </td>
+            <td className="row-actions">
+              <Link to={`/service/jobs/${j.id}`}>상세</Link>
+              {j.status === "success" && <a href={api.downloadUrl(j.id)}>다운로드</a>}
             </td>
           </tr>
         ))}

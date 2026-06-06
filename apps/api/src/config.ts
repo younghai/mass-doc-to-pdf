@@ -31,6 +31,7 @@ export interface AuthConfigValues {
   googleId: string;
   googleSecret: string;
   secret: string;
+  devAuth: boolean;
 }
 
 export interface AppConfig {
@@ -58,6 +59,7 @@ export function loadAppConfig(env: NodeJS.ProcessEnv): AppConfig {
       googleId: env.GOOGLE_CLIENT_ID ?? "",
       googleSecret: env.GOOGLE_CLIENT_SECRET ?? "",
       secret: env.AUTH_SECRET,
+      devAuth: env.DEV_AUTH === "1",
     },
     webOrigin: env.WEB_ORIGIN ?? "http://localhost:5173",
     port: Number(env.PORT ?? 8000),

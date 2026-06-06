@@ -2,6 +2,36 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { JobStatus } from "@hwptopdf/shared";
 import type { AppDeps } from "../app.js";
 
+const CONTROL_OR_QUOTE_RE = /[\u0000-\u001f\u007f"\\]/g;
+const NON_ASCII_RE = /[^\x20-\x7e]/g;
+const RFC5987_EXTRA_RE = /['()*]/g;
+
+function pdfNameFrom(filename: string): string {
+  const base = filename.replace(/\.[^.]+$/, "").trim();
+  return `${base || "download"}.pdf`;
+}
+
+function asciiFallback(filename: string): string {
+  const sanitized = filename
+    .normalize("NFKD")
+    .replace(NON_ASCII_RE, "")
+    .replace(CONTROL_OR_QUOTE_RE, "_")
+    .trim();
+  const base = sanitized.replace(/\.[^.]+$/, "").trim();
+  return `${base || "download"}.pdf`;
+}
+
+function encodeRFC5987Value(value: string): string {
+  return encodeURIComponent(value).replace(RFC5987_EXTRA_RE, (char) =>
+    `%${char.charCodeAt(0).toString(16).toUpperCase()}`,
+  );
+}
+
+function downloadDisposition(filename: string): string {
+  const pdfName = pdfNameFrom(filename);
+  return `attachment; filename="${asciiFallback(pdfName)}"; filename*=UTF-8''${encodeRFC5987Value(pdfName)}`;
+}
+
 export function registerJobs(app: FastifyInstance, deps: AppDeps) {
   const auth = async (req: FastifyRequest, reply: FastifyReply) => {
     const user = await deps.getSessionUser(req);
@@ -38,10 +68,7 @@ export function registerJobs(app: FastifyInstance, deps: AppDeps) {
     const bytes = await deps.storage.get(raw.outputKey);
     return reply
       .header("content-type", "application/pdf")
-      .header(
-        "content-disposition",
-        `attachment; filename="${raw.filename.replace(/\.[^.]+$/, "")}.pdf"`,
-      )
+      .header("content-disposition", downloadDisposition(raw.filename))
       .send(Buffer.from(bytes));
   });
 }

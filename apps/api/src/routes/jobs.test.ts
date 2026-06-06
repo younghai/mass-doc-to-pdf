@@ -74,4 +74,28 @@ describe("jobs routes", () => {
     const bad = await app.inject({ method: "GET", url: `/api/jobs/${badJob.id}/download` });
     expect(bad.statusCode).toBe(409);
   });
+
+  it("download supports Korean PPT filenames in content disposition", async () => {
+    const { app } = makeApp();
+    const created = await jobs.create(userId, {
+      filename: "발표자료.pptx",
+      format: "office",
+      extension: "pptx",
+      mimeType: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+      sizeBytes: 10,
+      sourceKey: "src/발표자료.pptx",
+    });
+    await jobs.markSuccess(created.id, {
+      engine: "gotenberg",
+      durationMs: 100,
+      outputKey: "out/발표자료",
+    });
+
+    const dl = await app.inject({ method: "GET", url: `/api/jobs/${created.id}/download` });
+
+    expect(dl.statusCode).toBe(200);
+    expect(dl.headers["content-disposition"]).toContain('filename="download.pdf"');
+    expect(dl.headers["content-disposition"]).toContain("filename*=UTF-8''");
+    expect(dl.body.slice(0, 5)).toBe("%PDF-");
+  });
 });

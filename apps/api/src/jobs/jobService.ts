@@ -54,6 +54,15 @@ export class JobService {
     );
   }
 
+  async markRunning(id: string, p: { engine: string }) {
+    return toDTO(
+      await this.prisma.conversionJob.update({
+        where: { id },
+        data: { status: "running", engine: p.engine, error: null },
+      }),
+    );
+  }
+
   async markFailed(id: string, p: { engine: string; durationMs: number; error: string }) {
     return toDTO(
       await this.prisma.conversionJob.update({
@@ -91,12 +100,14 @@ export class JobService {
     const c = (s: string) => rows.find((r) => r.status === s)?._count ?? 0;
     const success = c("success");
     const failed = c("failed");
+    const running = c("running");
     const pending = c("pending");
-    const total = success + failed + pending;
+    const total = success + failed + running + pending;
     return {
       total,
       success,
       failed,
+      running,
       pending,
       successRate: success + failed ? success / (success + failed) : 0,
     };

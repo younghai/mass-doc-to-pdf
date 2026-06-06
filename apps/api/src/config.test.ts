@@ -30,6 +30,12 @@ describe("loadAppConfig", () => {
     expect(cfg.s3.bucket).toBe("hwptopdf");
     expect(cfg.webOrigin).toBe("http://localhost:5173");
     expect(cfg.auth.secret).toBe("s");
+    expect(cfg.auth.devAuth).toBe(false);
+  });
+
+  it("enables local operations auth when DEV_AUTH=1", () => {
+    const cfg = loadAppConfig({ AUTH_SECRET: "s", DEV_AUTH: "1" });
+    expect(cfg.auth.devAuth).toBe(true);
   });
 
   it("throws when AUTH_SECRET is missing", () => {

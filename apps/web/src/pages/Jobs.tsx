@@ -6,6 +6,8 @@ import { JobsTable } from "../components/JobsTable";
 
 const TABS: { key: "all" | JobStatus; label: string }[] = [
   { key: "all", label: "전체" },
+  { key: "running", label: "진행 중" },
+  { key: "pending", label: "대기" },
   { key: "success", label: "성공" },
   { key: "failed", label: "실패" },
 ];
@@ -16,11 +18,17 @@ export function Jobs() {
   const { data, isLoading } = useQuery({
     queryKey: ["jobs", tab],
     queryFn: () => api.listJobs(status),
+    refetchInterval: 2_000,
   });
 
   return (
     <section>
-      <h2>변환 내역</h2>
+      <div className="section-head">
+        <div>
+          <h2>작업 큐</h2>
+          <p>진행 중인 변환과 실패 작업을 우선 확인합니다.</p>
+        </div>
+      </div>
       <div className="tabs">
         {TABS.map((t) => (
           <button

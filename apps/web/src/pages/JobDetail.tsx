@@ -10,6 +10,7 @@ export function JobDetail() {
     queryKey: ["job", id],
     queryFn: () => api.getJob(id),
     retry: false,
+    refetchInterval: 2_000,
   });
 
   if (isLoading) return <p>로딩 중…</p>;
@@ -41,6 +42,10 @@ export function JobDetail() {
         <a className="btn" href={api.downloadUrl(job.id)}>
           PDF 다운로드
         </a>
+      ) : job.status === "running" || job.status === "pending" ? (
+        <div className="notice" role="status">
+          변환 작업이 진행 중입니다. 완료되면 이 화면에 다운로드 버튼이 표시됩니다.
+        </div>
       ) : job.status === "failed" ? (
         <div className="error" role="alert">
           <strong>변환 실패</strong>

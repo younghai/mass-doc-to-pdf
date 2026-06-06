@@ -23,6 +23,7 @@ test("shows totals, success rate, and recent files", async () => {
     total: 10,
     success: 8,
     failed: 2,
+    running: 1,
     pending: 0,
     successRate: 0.8,
   });
@@ -45,6 +46,7 @@ test("shows totals, success rate, and recent files", async () => {
   renderWithProviders(<Dashboard />);
 
   await waitFor(() => expect(screen.getByText("80%")).toBeInTheDocument());
+  expect(screen.getByText("진행 중")).toBeInTheDocument();
   expect(screen.getByText("총 변환수")).toBeInTheDocument();
   expect(screen.getByText("10")).toBeInTheDocument();
   await waitFor(() => expect(screen.getByText("recent.docx")).toBeInTheDocument());
