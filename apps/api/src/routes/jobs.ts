@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { JobStatus } from "@hwptopdf/shared";
 import type { AppDeps } from "../app.js";
+import { reportObjectKey } from "../convert/quality.js";
 
 const CONTROL_OR_QUOTE_RE = /[\u0000-\u001f\u007f"\\]/g;
 const NON_ASCII_RE = /[^\x20-\x7e]/g;
@@ -30,6 +31,13 @@ function encodeRFC5987Value(value: string): string {
 function downloadDisposition(filename: string): string {
   const pdfName = pdfNameFrom(filename);
   return `attachment; filename="${asciiFallback(pdfName)}"; filename*=UTF-8''${encodeRFC5987Value(pdfName)}`;
+}
+
+function isMissingObject(err: unknown): boolean {
+  if (err instanceof Error && "code" in err) {
+    return err.code === "ENOENT" || err.code === "NoSuchKey";
+  }
+  return false;
 }
 
 export function registerJobs(app: FastifyInstance, deps: AppDeps) {
@@ -70,5 +78,22 @@ export function registerJobs(app: FastifyInstance, deps: AppDeps) {
       .header("content-type", "application/pdf")
       .header("content-disposition", downloadDisposition(raw.filename))
       .send(Buffer.from(bytes));
+  });
+
+  app.get("/api/jobs/:id/quality", async (req, reply) => {
+    const user = await auth(req, reply);
+    if (!user) return;
+    const id = (req.params as { id: string }).id;
+    const raw = await deps.jobs.getRaw(user.id, id);
+    if (!raw) return reply.code(404).send({ error: "not found" });
+    if (raw.status !== "success") return reply.code(409).send({ error: "not converted" });
+
+    try {
+      const bytes = await deps.storage.get(reportObjectKey(user.id, id));
+      return reply.header("content-type", "application/json").send(Buffer.from(bytes));
+    } catch (err) {
+      if (isMissingObject(err)) return reply.code(404).send({ error: "quality report not found" });
+      throw err;
+    }
   });
 }

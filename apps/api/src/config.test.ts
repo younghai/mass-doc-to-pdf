@@ -7,8 +7,24 @@ describe("loadEngineConfig", () => {
     expect(cfg.gotenbergUrl).toBe("http://localhost:3000");
     expect(cfg.hwpSidecarUrl).toBe("http://localhost:8080");
     expect(cfg.officeEngine).toBe("gotenberg");
+    expect(cfg.rhwp).toEqual({ enabled: true, pythonPath: "python3", timeoutMs: 120_000 });
     expect(cfg.hancom).toBeUndefined();
     expect(cfg.aspose).toBeUndefined();
+  });
+
+  it("reads rhwp worker config", () => {
+    const cfg = loadEngineConfig({
+      RHWP_ENABLED: "0",
+      RHWP_PYTHON: "/opt/rhwp/bin/python",
+      RHWP_WORKER_SCRIPT: "/srv/rhwp_worker.py",
+      RHWP_TIMEOUT_MS: "90000",
+    });
+    expect(cfg.rhwp).toEqual({
+      enabled: false,
+      pythonPath: "/opt/rhwp/bin/python",
+      workerScript: "/srv/rhwp_worker.py",
+      timeoutMs: 90_000,
+    });
   });
 
   it("routes office conversion to the sidecar when configured for standalone mode", () => {
@@ -61,5 +77,21 @@ describe("loadAppConfig", () => {
 
   it("throws when AUTH_SECRET is missing", () => {
     expect(() => loadAppConfig({})).toThrow(/AUTH_SECRET/);
+  });
+
+  it("refuses DEV_AUTH=1 in production without ALLOW_DEV_AUTH", () => {
+    expect(() =>
+      loadAppConfig({ AUTH_SECRET: "s", NODE_ENV: "production", DEV_AUTH: "1" }),
+    ).toThrow(/DEV_AUTH/);
+  });
+
+  it("allows DEV_AUTH=1 in production when ALLOW_DEV_AUTH=1", () => {
+    const cfg = loadAppConfig({
+      AUTH_SECRET: "s",
+      NODE_ENV: "production",
+      DEV_AUTH: "1",
+      ALLOW_DEV_AUTH: "1",
+    });
+    expect(cfg.auth.devAuth).toBe(true);
   });
 });

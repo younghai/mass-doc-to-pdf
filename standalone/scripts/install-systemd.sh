@@ -36,6 +36,9 @@ sed -e "s#__ROOT__#$ROOT#g" -e "s#__USER__#$DEPLOY_USER#g" -e "s#__HOME__#$DEPLO
 sed -e "s#__ROOT__#$ROOT#g" -e "s#__USER__#$DEPLOY_USER#g" -e "s#__HOME__#$DEPLOY_HOME#g" \
   "$ROOT/standalone/systemd/mass-doc-to-pdf-sidecar.service.in" \
   > /etc/systemd/system/mass-doc-to-pdf-sidecar.service
+sed -e "s#__ROOT__#$ROOT#g" -e "s#__USER__#$DEPLOY_USER#g" -e "s#__HOME__#$DEPLOY_HOME#g" \
+  "$ROOT/standalone/systemd/mass-doc-to-pdf-worker.service.in" \
+  > /etc/systemd/system/mass-doc-to-pdf-worker.service
 sed "s#__ROOT__#$ROOT#g" "$ROOT/standalone/nginx/mass-doc-to-pdf.conf.in" \
   > /etc/nginx/sites-available/mass-doc-to-pdf.conf
 
@@ -49,6 +52,7 @@ else
   systemctl disable --now mass-doc-to-pdf-sidecar 2>/dev/null || true
 fi
 systemctl enable --now mass-doc-to-pdf-api
+systemctl enable --now mass-doc-to-pdf-worker
 nginx -t
 systemctl reload nginx
 

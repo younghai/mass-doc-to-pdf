@@ -3,6 +3,7 @@ import { setupTestDb } from "../test/testDb.js";
 import { buildApp, type AppDeps } from "../app.js";
 import { JobService } from "../jobs/jobService.js";
 import type { Converter } from "../convert/types.js";
+import type { QualityReport } from "@hwptopdf/shared";
 
 let db: ReturnType<typeof setupTestDb>;
 let userId: string;
@@ -12,7 +13,26 @@ const pdf = Buffer.from("%PDF-1.7 output");
 const noEngine: Converter = { name: "x", async convert() { return Buffer.from(""); } };
 
 function makeApp() {
-  const storage = { put: vi.fn(async () => {}), get: vi.fn(async () => new Uint8Array(pdf)) };
+  const report: QualityReport = {
+    version: 1,
+    jobId: "1",
+    filename: "ok.docx",
+    format: "office",
+    selectedEngine: "rhwp",
+    grade: "good",
+    checks: { pdfBytes: 15, pageCount: 1 },
+    attempts: [{ engine: "rhwp", status: "success", durationMs: 42 }],
+    warnings: [],
+    createdAt: new Date(2026, 0, 1).toISOString(),
+  };
+  const storage = {
+    put: vi.fn(async () => {}),
+    get: vi.fn(async (key: string) =>
+      key.includes("/report/")
+        ? new TextEncoder().encode(JSON.stringify(report))
+        : new Uint8Array(pdf),
+    ),
+  };
   const deps: AppDeps = {
     registry: { forFormat: () => noEngine },
     storage,
@@ -97,5 +117,24 @@ describe("jobs routes", () => {
     expect(dl.headers["content-disposition"]).toContain('filename="download.pdf"');
     expect(dl.headers["content-disposition"]).toContain("filename*=UTF-8''");
     expect(dl.body.slice(0, 5)).toBe("%PDF-");
+  });
+
+  it("returns quality report for a successful job", async () => {
+    const { app } = makeApp();
+    const list = (await app.inject({ method: "GET", url: "/api/jobs" })).json() as Array<{
+      id: string;
+      status: string;
+    }>;
+    const okJob = list.find((j) => j.status === "success");
+    if (!okJob) throw new Error("missing successful job");
+
+    const res = await app.inject({ method: "GET", url: `/api/jobs/${okJob.id}/quality` });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({
+      selectedEngine: "rhwp",
+      grade: "good",
+      checks: { pageCount: 1 },
+    });
   });
 });

@@ -1,0 +1,94 @@
+.quality-report {
+  margin-top: 1.25rem;
+}
+
+.quality-mode {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin: 0 0 1rem;
+}
+
+.quality-mode label {
+  display: grid;
+  gap: 0.25rem;
+  min-height: 5.25rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--surface-2);
+  border-radius: 0.55rem;
+  background: var(--surface);
+}
+
+.quality-mode label.active {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px rgba(32, 107, 196, 0.12);
+}
+
+.quality-mode input {
+  position: absolute;
+  opacity: 0;
+}
+
+.quality-mode span {
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+.batch-mode {
+  margin: 0;
+}
+
+.quality-props {
+  margin-bottom: 0.75rem;
+}
+
+.quality-list {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.quality-attempt {
+  display: grid;
+  grid-template-columns: minmax(7rem, 1fr) auto auto;
+  gap: 0.75rem;
+  align-items: center;
+  padding: 0.8rem 1rem;
+  border: 1px solid var(--surface-2);
+  border-radius: 0.55rem;
+  background: var(--surface);
+}
+
+.quality-attempt small {
+  grid-column: 1 / -1;
+  color: var(--muted);
+}
+
+.quality-warnings {
+  margin: 0.75rem 0 0;
+  padding-left: 1.2rem;
+  color: #8a5a00;
+}
+
+.pdf-preview {
+  margin-top: 1.25rem;
+}
+
+.pdf-preview iframe {
+  width: 100%;
+  min-height: 28rem;
+  border: 1px solid var(--surface-2);
+  border-radius: 0.55rem;
+  background: var(--surface);
+}
+
+.preview-pages {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.preview-pages a {
+  color: var(--primary);
+  font-weight: 700;
+}

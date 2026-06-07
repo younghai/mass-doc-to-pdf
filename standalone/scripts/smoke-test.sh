@@ -4,6 +4,7 @@ set -euo pipefail
 WEB_URL="${WEB_URL:-http://localhost}"
 API_URL="${API_URL:-http://127.0.0.1:18010}"
 SIDECAR_URL="${SIDECAR_URL:-http://127.0.0.1:18080}"
+QUALITY_MODE="${QUALITY_MODE:-precise}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 ENV_FILE="${ENV_FILE:-$ROOT/.env.standalone}"
 
@@ -33,6 +34,7 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 DOCX="$TMP_DIR/smoke.docx"
 JOB_JSON="$TMP_DIR/job.json"
 PDF="$TMP_DIR/smoke.pdf"
+QUALITY_JSON="$TMP_DIR/quality.json"
 
 DOCX="$DOCX" python3 - <<'PY'
 import os
@@ -60,7 +62,7 @@ with zipfile.ZipFile(docx, "w", zipfile.ZIP_DEFLATED) as zf:
 PY
 
 printf "upload: "
-curl -fsS -X POST -F "file=@$DOCX" "$WEB_URL/api/convert" > "$JOB_JSON"
+curl -fsS -X POST -F "file=@$DOCX" "$WEB_URL/api/convert?qualityMode=$QUALITY_MODE" > "$JOB_JSON"
 JOB_ID="$(python3 - <<'PY' "$JOB_JSON"
 import json
 import sys
@@ -101,3 +103,17 @@ if ! head -c 5 "$PDF" | grep -q "%PDF-"; then
   exit 1
 fi
 printf "download: %s bytes\n" "$(wc -c < "$PDF")"
+
+printf "quality: "
+curl -fsS "$WEB_URL/api/jobs/$JOB_ID/quality" -o "$QUALITY_JSON"
+python3 - <<'PY' "$QUALITY_JSON"
+import json
+import sys
+
+data = json.load(open(sys.argv[1]))
+mode = data.get("mode", "-")
+status = data.get("status", "-")
+action = data.get("recommendedAction", "-")
+print(f"mode={mode} engine={data['selectedEngine']} grade={data['grade']} status={status} attempts={len(data['attempts'])}")
+print(f"recommendedAction={action}")
+PY

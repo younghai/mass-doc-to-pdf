@@ -15,6 +15,7 @@ apt-get install -y --no-install-recommends \
   openssl \
   sqlite3 \
   python3 \
+  python3-venv \
   python3-flask \
   default-jre \
   libreoffice \

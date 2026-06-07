@@ -16,6 +16,12 @@ export function loadEngineConfig(env: NodeJS.ProcessEnv): EngineConfig {
     gotenbergUrl: env.GOTENBERG_URL ?? "http://localhost:3000",
     hwpSidecarUrl: env.HWP_SIDECAR_URL ?? "http://localhost:8080",
     officeEngine: officeEngine(env),
+    rhwp: {
+      enabled: env.RHWP_ENABLED !== "0",
+      pythonPath: env.RHWP_PYTHON ?? "python3",
+      workerScript: env.RHWP_WORKER_SCRIPT || undefined,
+      timeoutMs: Number(env.RHWP_TIMEOUT_MS ?? 120_000),
+    },
   };
 
   if (env.HANCOM_BASE_URL && env.HANCOM_API_KEY) {
@@ -62,6 +68,13 @@ export interface AppConfig {
 export function loadAppConfig(env: NodeJS.ProcessEnv): AppConfig {
   if (!env.AUTH_SECRET) {
     throw new Error("AUTH_SECRET is required (generate with: openssl rand -base64 32)");
+  }
+  // Refuse the auth-bypassing operator mode in production unless explicitly allowed.
+  if (env.NODE_ENV === "production" && env.DEV_AUTH === "1" && env.ALLOW_DEV_AUTH !== "1") {
+    throw new Error(
+      "DEV_AUTH=1 bypasses authentication and is refused in production. " +
+        "Set DEV_AUTH=0 (use Google OAuth) or, only for trusted internal hosts, ALLOW_DEV_AUTH=1.",
+    );
   }
   return {
     engines: loadEngineConfig(env),

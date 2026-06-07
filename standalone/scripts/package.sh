@@ -9,11 +9,15 @@ rm -rf "$APP_DIR"
 mkdir -p "$APP_DIR"
 
 cd "$ROOT"
-tar \
+COPYFILE_DISABLE=1 tar \
+  --disable-copyfile \
+  --no-xattrs \
   --exclude ".git" \
+  --exclude ".gitignore" \
   --exclude ".github" \
   --exclude ".DS_Store" \
   --exclude "._*" \
+  --exclude "*/._*" \
   --exclude ".claude" \
   --exclude ".codex" \
   --exclude ".debug-journal.md" \
@@ -32,7 +36,12 @@ tar \
   --exclude "standalone/release" \
   -cf - . | tar -C "$APP_DIR" -xf -
 
-tar -C "$OUT_DIR" -czf "$OUT_DIR/mass-doc-to-pdf-standalone.tar.gz" mass-doc-to-pdf
+COPYFILE_DISABLE=1 tar \
+  --disable-copyfile \
+  --no-xattrs \
+  -C "$OUT_DIR" \
+  -czf "$OUT_DIR/mass-doc-to-pdf-standalone.tar.gz" \
+  mass-doc-to-pdf
 
 echo "Standalone folder: $APP_DIR"
 echo "Archive: $OUT_DIR/mass-doc-to-pdf-standalone.tar.gz"

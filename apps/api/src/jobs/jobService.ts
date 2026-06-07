@@ -101,13 +101,15 @@ export class JobService {
     const success = c("success");
     const failed = c("failed");
     const running = c("running");
+    const queued = c("queued");
     const pending = c("pending");
-    const total = success + failed + running + pending;
+    const total = success + failed + running + queued + pending;
     return {
       total,
       success,
       failed,
       running,
+      queued,
       pending,
       successRate: success + failed ? success / (success + failed) : 0,
     };

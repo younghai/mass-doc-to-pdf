@@ -67,7 +67,14 @@ model ConversionJob {
   sourceKey  String // S3 key of original upload
   outputKey  String? // S3 key of result PDF
   createdAt  DateTime @default(now())
+  // Durable-queue fields (P1): let a separate worker claim/retry jobs.
+  qualityMode String? // "precise" | "quick"
+  batchId     String?
+  attempts    Int      @default(0)
+  lockedAt    DateTime?
+  lockedBy    String?
   user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, createdAt])
+  @@index([status, lockedAt])
 }

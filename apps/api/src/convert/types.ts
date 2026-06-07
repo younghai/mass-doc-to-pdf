@@ -1,3 +1,5 @@
+import type { QualityReport } from "@hwptopdf/shared";
+
 export interface ConvertInput {
   filename: string;
   data: Buffer;
@@ -6,6 +8,19 @@ export interface ConvertInput {
 export interface Converter {
   readonly name: string;
   convert(input: ConvertInput): Promise<Buffer>;
+}
+
+export interface ConversionResult {
+  readonly pdf: Buffer;
+  readonly report?: QualityReport;
+}
+
+export interface ReportingConverter extends Converter {
+  convertWithReport(input: ConvertInput): Promise<ConversionResult>;
+}
+
+export function isReportingConverter(converter: Converter): converter is ReportingConverter {
+  return "convertWithReport" in converter && typeof converter.convertWithReport === "function";
 }
 
 export type FetchFn = typeof fetch;

@@ -751,3 +751,5 @@ p {
     grid-column: auto;
   }
 }
+
+.pill-queued { background: #c7d2fe; color: #1e3a8a; }

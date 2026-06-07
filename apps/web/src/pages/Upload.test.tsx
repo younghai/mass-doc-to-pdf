@@ -44,6 +44,16 @@ test("uploads a file and shows a running job with a detail link", async () => {
   await waitFor(() => expect(screen.getByText("변환 중")).toBeInTheDocument());
   expect(screen.getByText("작업 큐에서 변환 중입니다.")).toBeInTheDocument();
   expect(screen.getByRole("link", { name: "상세 보기" })).toBeInTheDocument();
+  expect(api.upload).toHaveBeenCalledWith(expect.any(File), "precise");
+});
+
+test("can upload with quick quality mode", async () => {
+  vi.mocked(api.upload).mockResolvedValue(job({ status: "running", durationMs: null }));
+  renderWithProviders(<Upload />);
+  await userEvent.click(screen.getByRole("radio", { name: "빠른 변환" }));
+  const input = screen.getByTestId("file-input") as HTMLInputElement;
+  await userEvent.upload(input, new File(["x"], "r.hwp"));
+  await waitFor(() => expect(api.upload).toHaveBeenCalledWith(expect.any(File), "quick"));
 });
 
 test("shows the failure reason when conversion fails", async () => {

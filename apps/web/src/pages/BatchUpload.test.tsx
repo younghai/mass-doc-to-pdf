@@ -8,7 +8,7 @@ import type { JobDTO } from "@hwptopdf/shared";
 
 vi.mock("../api/client", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../api/client")>();
-  return { ...actual, api: { ...actual.api, upload: vi.fn() } };
+  return { ...actual, api: { ...actual.api, upload: vi.fn(), getJob: vi.fn(), getQualityReport: vi.fn() } };
 });
 
 const job = (over: Partial<JobDTO>): JobDTO => ({
@@ -28,6 +28,22 @@ const job = (over: Partial<JobDTO>): JobDTO => ({
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(api.getJob).mockResolvedValue(job({ status: "success", engine: "rhwp", durationMs: 100 }));
+  vi.mocked(api.getQualityReport).mockResolvedValue({
+    version: 1,
+    jobId: "j1",
+    filename: "report.docx",
+    format: "office",
+    mode: "precise",
+    selectedEngine: "rhwp",
+    grade: "good",
+    status: "passed",
+    recommendedAction: "검수 우선순위 낮음",
+    checks: { pdfBytes: 100, pageCount: 1 },
+    attempts: [{ engine: "rhwp", status: "success", durationMs: 10 }],
+    warnings: [],
+    createdAt: new Date(2026, 0, 1).toISOString(),
+  });
 });
 
 test("shows folder batch limits and accepted file guidance", () => {
@@ -74,6 +90,7 @@ test("queues ready files sequentially through the upload API", async () => {
   await userEvent.click(screen.getByRole("button", { name: "변환 시작" }));
 
   await waitFor(() => expect(api.upload).toHaveBeenCalledTimes(2));
+  expect(api.upload).toHaveBeenCalledWith(expect.any(File), "precise");
   const rows = screen.getAllByRole("row");
   expect(within(rows[1]).getByRole("link", { name: "작업 보기" })).toHaveAttribute(
     "href",
@@ -83,6 +100,35 @@ test("queues ready files sequentially through the upload API", async () => {
     "href",
     "/service/jobs/j2",
   );
+});
+
+test("separates low-quality batch results after conversion completes", async () => {
+  vi.mocked(api.upload).mockResolvedValue(job({ id: "j3", filename: "fallback.hwp" }));
+  vi.mocked(api.getJob).mockResolvedValue(job({ id: "j3", status: "success", engine: "builtin-office" }));
+  vi.mocked(api.getQualityReport).mockResolvedValue({
+    version: 1,
+    jobId: "j3",
+    filename: "fallback.hwp",
+    format: "hwp",
+    mode: "quick",
+    selectedEngine: "builtin-office",
+    grade: "fallback",
+    status: "review",
+    recommendedAction: "원본과 첫 페이지를 비교하고 정밀 변환으로 재시도하세요.",
+    checks: { pdfBytes: 100, pageCount: 1 },
+    attempts: [{ engine: "builtin-office", status: "success", durationMs: 10 }],
+    warnings: [],
+    createdAt: new Date(2026, 0, 1).toISOString(),
+  });
+
+  renderWithProviders(<BatchUpload />);
+  await userEvent.click(screen.getByRole("radio", { name: "빠른 변환" }));
+  await userEvent.upload(screen.getByTestId("folder-input"), [new File(["a"], "fallback.hwp")]);
+  await userEvent.click(screen.getByRole("button", { name: "변환 시작" }));
+
+  const rows = screen.getAllByRole("row");
+  await waitFor(() => expect(within(rows[1]).getByText("저품질 의심")).toBeInTheDocument());
+  expect(api.upload).toHaveBeenCalledWith(expect.any(File), "quick");
 });
 
 test("keeps only the first 1000 files from a folder selection", async () => {
