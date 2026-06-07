@@ -16,3 +16,4 @@ e2e/test-results/
 standalone/release/
 apps/api/prisma/prisma/
 **/*.db
+newsletter/
