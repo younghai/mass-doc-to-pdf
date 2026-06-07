@@ -4,6 +4,7 @@ import { MAX_UPLOAD_BYTES } from "@hwptopdf/shared";
 import type { Registry } from "./convert/registry.js";
 import type { Storage } from "./storage/s3.js";
 import type { JobService } from "./jobs/jobService.js";
+import type { JobQueue } from "./queue/jobQueue.js";
 import type { SessionUser } from "./auth/plugin.js";
 import { registerConvert } from "./routes/convert.js";
 import { registerJobs } from "./routes/jobs.js";
@@ -13,6 +14,8 @@ export interface AppDeps {
   registry: Registry;
   storage: Storage;
   jobs: JobService;
+  /** When provided, conversions are enqueued for the worker instead of run inline. */
+  queue?: JobQueue;
   getSessionUser(req: FastifyRequest): Promise<SessionUser | null>;
 }
 

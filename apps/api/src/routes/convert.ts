@@ -161,8 +161,17 @@ export function registerConvert(app: FastifyInstance, deps: AppDeps) {
       mimeType: meta.mimeType,
       sizeBytes: data.length,
       sourceKey,
+      qualityMode,
     });
 
+    // Durable path: hand the job to the worker queue (survives API restarts).
+    if (deps.queue) {
+      await deps.queue.enqueue(job.id);
+      const queued = await deps.jobs.get(user.id, job.id);
+      return reply.code(202).send(queued ?? { ...job, status: "queued" });
+    }
+
+    // Inline path (default): convert within the request lifecycle.
     const engine = deps.registry.forFormat(meta.format, { qualityMode });
     const running = await deps.jobs.markRunning(job.id, { engine: engine.name });
     void finishConversion(deps, {

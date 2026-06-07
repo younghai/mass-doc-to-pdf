@@ -5,6 +5,7 @@ import { ensureDevAuthUser } from "./auth/devAuth.js";
 import { buildAuthConfig } from "./auth/authConfig.js";
 import { buildRegistry } from "./convert/registry.js";
 import { JobService } from "./jobs/jobService.js";
+import { JobQueue } from "./queue/jobQueue.js";
 import { LocalFileStorage, S3Storage, makeS3Client, type Storage } from "./storage/s3.js";
 import { loadAppConfig } from "./config.js";
 import { prisma } from "./db.js";
@@ -24,11 +25,15 @@ const storage: Storage =
     : new S3Storage(makeS3Client(cfg.s3), cfg.s3.bucket);
 const jobs = new JobService(prisma);
 const registry = buildRegistry(cfg.engines);
+// Opt-in durable queue: when enabled, the API enqueues and the worker process
+// (worker-main) performs conversions. Default keeps the inline conversion path.
+const queue = process.env.USE_QUEUE === "1" ? new JobQueue(prisma) : undefined;
 
 const app = buildApp({
   registry,
   storage,
   jobs,
+  queue,
   getSessionUser: (req) => app.getSessionUser(req),
 });
 

@@ -8,6 +8,7 @@ export interface CreateInput {
   mimeType: string;
   sizeBytes: number;
   sourceKey: string;
+  qualityMode?: string;
 }
 
 function toDTO(j: {

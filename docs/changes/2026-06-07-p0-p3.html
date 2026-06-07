@@ -79,9 +79,19 @@
 <li><code>jobQueue.test.ts</code>(7) + <code>worker.test.ts</code>(3) 통과 — FIFO claim, 중복 claim 방지, 재시도/포기, stale 복구, 성공 시 PDF+리포트 저장</li>
 <li>API 전체 17파일 70통과(+1 skip), 타입체크 clean</li>
 </ul>
-<h3>남은 단계 (조율 필요 — hot 파일)</h3>
+<h3>Rewire — <strong>옵트인(비파괴) 방식으로 완료</strong></h3>
+<p>병행 인라인 경로/테스트를 깨지 않도록 <strong>추가형(env <code>USE_QUEUE=1</code>) 분기</strong>로 적용:</p>
 <ul>
-<li><code>convert.ts</code>의 <code>void finishConversion(...)</code>(인-프로세스) → <strong><code>queue.enqueue(job.id)</code></strong> 로 전환 + <code>app.ts</code>/<code>server.ts</code> deps에 큐 주입. convert.ts는 병행 편집 중이라 충돌 방지를 위해 <strong>마지막에 합의 후 적용</strong>.</li>
+<li><code>app.ts</code> <code>AppDeps.queue?</code> (선택), <code>server.ts</code> <code>USE_QUEUE=1</code>일 때 <code>JobQueue</code> 주입</li>
+<li><code>routes/convert.ts</code>: <code>deps.queue</code> 있으면 <code>enqueue</code> 후 <code>queued</code> 반환, 없으면 <strong>기존 인라인 변환 그대로</strong></li>
+<li><code>jobService.CreateInput.qualityMode?</code> 추가(워커가 모드 인지)</li>
+<li>신규 <code>routes/convert.queue.test.ts</code>: enqueue→worker 처리까지 end-to-end (병행 <code>convert.test.ts</code> 무수정)</li>
+<li>기본값은 인라인이라 기존 동작/테스트 불변. <code>USE_QUEUE=1</code> + 워커 프로세스 실행 시 내구 경로 활성화</li>
+</ul>
+<h3>검증 (최종)</h3>
+<ul>
+<li>전체 green: shared 6 / api 71(+1 skip, 18파일) / web 21, 타입체크·빌드 clean</li>
+<li>정리: 잘못 커밋된 로컬 <code>dev.db</code> 추적 해제 + <code>.gitignore</code>(<code>**/*.db</code>) 보강</li>
 </ul>
 <h2>P2 / P3</h2>
 <ul>
