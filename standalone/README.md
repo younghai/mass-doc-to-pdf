@@ -4,11 +4,25 @@
 
 운영 검증 결과와 전환 조건은 [OPERATIONS-VALIDATION.md](./OPERATIONS-VALIDATION.md)를 먼저 확인합니다.
 
+## 최근 GitHub 업데이트 요약
+
+최근 `main`에 반영된 standalone 관련 변경은 단순 문구 수정이 아니라 운영 검증, HWP 품질 고도화, 미리보기 안정화, 배포 재현성 보강입니다.
+
+| 영역 | 변경/추가 파일 | 운영 영향 |
+| --- | --- | --- |
+| HWP 정밀 변환 | `standalone/scripts/install-rhwp-cli.sh`, `standalone/env.example` | Rust `rhwp export-pdf` CLI를 설치하고 `RHWP_CLI_*` 환경값으로 Python rhwp보다 앞단에 배치할 수 있습니다. |
+| 품질 리포트 | `standalone/scripts/quality-corpus-report.sh`, `standalone/scripts/quality-report-summary.sh`, `standalone/scripts/test-quality-corpus-report.sh` | HWP/HWPX 샘플을 `success`, `review`, `failed`로 집계하고 `jsonl`, `json`, `csv`, `summary.md`를 생성합니다. 샘플 부족분도 `sampleShortfall`로 기록합니다. |
+| 서버 리허설 | `standalone/scripts/rehearse-ubuntu.sh`, `standalone/OPERATIONS-VALIDATION.md` | Ubuntu/VM에서 `install-ubuntu -> build -> init-db -> systemd -> smoke-test` 흐름을 한 번에 재현하고 로그를 남깁니다. |
+| 서비스 설치/상태 | `standalone/scripts/install-systemd.sh`, `standalone/nginx/mass-doc-to-pdf.conf.in`, `standalone/scripts/status.sh` | API, sidecar, worker, nginx가 env 기반 포트로 설치되고 status 확인 대상에 worker가 포함됩니다. |
+| smoke test | `standalone/scripts/smoke-test.sh` | Web/API/sidecar readiness를 기다린 뒤 업로드, 변환, PDF 다운로드, 품질 API까지 확인합니다. |
+| 패키징 | `standalone/scripts/package.sh`, `standalone/scripts/build.sh` | GitHub/로컬 개발 메타데이터와 build output을 제외한 source-only 배포본을 생성합니다. |
+| PDF 미리보기 | API/Web runtime 코드 | 상세 화면은 브라우저 PDF plugin에 의존하지 않고 `/api/jobs/:id/preview.png` 첫 페이지 PNG를 표시합니다. 원본 PDF는 `/preview` inline 링크로 열립니다. |
+
 구성:
 
 - API: Node.js + Fastify + Prisma SQLite
 - Web: 정적 Vite 빌드 결과 + Nginx
-- 변환 엔진: rhwp worker 1차 시도, LibreOffice + H2Orestart sidecar, Node API builtin fallback
+- 변환 엔진: rhwp-cli, rhwp worker, LibreOffice + H2Orestart sidecar, Node API builtin fallback
 - 저장소: 로컬 파일 저장소 (`STORAGE_DRIVER=local`)
 
 MinIO와 Gotenberg 없이 동작하도록 기본값은 `OFFICE_ENGINE=hwp-sidecar`입니다. Office/PPT는 LibreOffice sidecar로 원본 서식 렌더링을 우선 사용하고, HWP/HWPX는 품질 모드에 따라 변환 체인을 다르게 사용합니다. 실패/성공 시도 이력은 `/api/jobs/:id/quality`에 저장됩니다.
@@ -24,7 +38,7 @@ LibreOffice/H2Orestart를 사용할 수 없는 서버에서만 `OFFICE_ENGINE=bu
 운영 리포트 기준:
 
 - 변환 결과는 `passed`, `review`, `failed`로 분리합니다.
-- UI는 엔진명, 등급, 권장 조치, 첫 1-3페이지 PDF 미리보기 링크를 제공합니다.
+- UI는 엔진명, 등급, 권장 조치, 첫 페이지 PNG 미리보기, 첫 1-3페이지 inline PDF 링크를 제공합니다.
 - 1,000개 배치에서는 성공, 저품질 의심, 재시도 가능, 제외/실패를 따로 보여줍니다.
 
 ## 지원 OS
@@ -147,8 +161,21 @@ sudo standalone/scripts/install-systemd.sh
 - API 내부: `127.0.0.1:18010`
 - 변환 sidecar 내부: `127.0.0.1:18080` (`OFFICE_ENGINE=hwp-sidecar`일 때)
 - 품질 리포트: `GET /api/jobs/:id/quality`
+- PDF 다운로드: `GET /api/jobs/:id/download` (`Content-Disposition: attachment`)
+- PDF inline 열기: `GET /api/jobs/:id/preview` (`Content-Disposition: inline`)
+- 첫 페이지 이미지 미리보기: `GET /api/jobs/:id/preview.png` (`image/png`)
 
 Nginx가 `/api/*`를 API로 프록시합니다.
+
+## PDF 미리보기 동작
+
+상세 화면의 미리보기는 브라우저 내장 PDF viewer에만 의존하지 않습니다. API가 변환 완료 PDF의 첫 페이지를 LibreOffice headless로 PNG 렌더링해서 `/api/jobs/:id/preview.png`로 제공합니다. 그래서 브라우저가 iframe PDF 렌더링을 막거나 검은 화면을 표시해도 첫 페이지 미리보기는 이미지로 보입니다.
+
+미리보기 관련 조건:
+
+- `standalone/scripts/install-ubuntu.sh`가 설치하는 `libreoffice`가 필요합니다.
+- `/api/jobs/:id/preview.png`가 실패하면 UI는 inline PDF 새 창 링크를 fallback으로 표시합니다.
+- 다운로드 버튼은 계속 `/api/jobs/:id/download`를 사용하므로 사용자가 받는 PDF 파일 동작은 바뀌지 않습니다.
 
 ## 데이터 위치
 
@@ -210,14 +237,16 @@ standalone/scripts/quality-corpus-report.sh /path/to/document-samples
 quality-reports/prod-sample-001/jobs.jsonl
 quality-reports/prod-sample-001/summary.json
 quality-reports/prod-sample-001/summary.csv
+quality-reports/prod-sample-001/summary.md
 ```
 
-PO/운영 KPI는 `summary.json`에서 확인합니다.
+PO/운영 KPI는 `summary.json` 또는 사람이 읽기 쉬운 `summary.md`에서 확인합니다.
 
 - 전체 성공률: `jobStatus.success / total`
 - 고품질 통과율: `qualityStatus.passed / total`
 - 저품질 의심: `qualityStatus.review`
 - 재시도/조치 대상: `failedFiles`, `reviewFiles`
+- 샘플 부족 여부: `sampleShortfall`
 
 `rhwp-cli` 도입 후에는 같은 샘플로 최소 두 번 비교합니다.
 
