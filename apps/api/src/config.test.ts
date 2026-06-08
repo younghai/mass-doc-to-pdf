@@ -8,8 +8,32 @@ describe("loadEngineConfig", () => {
     expect(cfg.hwpSidecarUrl).toBe("http://localhost:8080");
     expect(cfg.officeEngine).toBe("gotenberg");
     expect(cfg.rhwp).toEqual({ enabled: true, pythonPath: "python3", timeoutMs: 120_000 });
+    expect(cfg.rhwpCli).toEqual({
+      enabled: false,
+      cliPath: "rhwp",
+      timeoutMs: 120_000,
+      fontPaths: [],
+      mode: "pdf",
+    });
     expect(cfg.hancom).toBeUndefined();
     expect(cfg.aspose).toBeUndefined();
+  });
+
+  it("reads rhwp Rust CLI renderer config", () => {
+    const cfg = loadEngineConfig({
+      RHWP_CLI_ENABLED: "1",
+      RHWP_CLI_PATH: "/opt/rhwp/bin/rhwp",
+      RHWP_CLI_TIMEOUT_MS: "180000",
+      RHWP_FONT_PATHS: "/opt/fonts/hwp:/opt/fonts/nanum",
+      RHWP_CLI_VISUAL_MODE: "raster",
+    });
+    expect(cfg.rhwpCli).toEqual({
+      enabled: true,
+      cliPath: "/opt/rhwp/bin/rhwp",
+      timeoutMs: 180_000,
+      fontPaths: ["/opt/fonts/hwp", "/opt/fonts/nanum"],
+      mode: "raster",
+    });
   });
 
   it("reads rhwp worker config", () => {
@@ -93,5 +117,16 @@ describe("loadAppConfig", () => {
       ALLOW_DEV_AUTH: "1",
     });
     expect(cfg.auth.devAuth).toBe(true);
+  });
+
+  it("refuses production Google OAuth when operation login is not ready", () => {
+    expect(() =>
+      loadAppConfig({
+        AUTH_SECRET: "s",
+        NODE_ENV: "production",
+        DEV_AUTH: "0",
+        WEB_ORIGIN: "http://172.19.1.151:8081",
+      }),
+    ).toThrow(/Google OAuth operation login is not ready/);
   });
 });

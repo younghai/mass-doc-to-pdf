@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { JobStatus } from "@hwptopdf/shared";
 import type { AppDeps } from "../app.js";
 import { reportObjectKey } from "../convert/quality.js";
+import { LibreOfficePdfPreviewRenderer, PdfPreviewError } from "../pdf/preview.js";
 
 const CONTROL_OR_QUOTE_RE = /[\u0000-\u001f\u007f"\\]/g;
 const NON_ASCII_RE = /[^\x20-\x7e]/g;
@@ -28,9 +29,15 @@ function encodeRFC5987Value(value: string): string {
   );
 }
 
-function downloadDisposition(filename: string): string {
+type PdfDisposition = "attachment" | "inline";
+type ConvertedPdf = {
+  readonly filename: string;
+  readonly bytes: Buffer;
+};
+
+function pdfDisposition(filename: string, disposition: PdfDisposition): string {
   const pdfName = pdfNameFrom(filename);
-  return `attachment; filename="${asciiFallback(pdfName)}"; filename*=UTF-8''${encodeRFC5987Value(pdfName)}`;
+  return `${disposition}; filename="${asciiFallback(pdfName)}"; filename*=UTF-8''${encodeRFC5987Value(pdfName)}`;
 }
 
 function isMissingObject(err: unknown): boolean {
@@ -41,6 +48,8 @@ function isMissingObject(err: unknown): boolean {
 }
 
 export function registerJobs(app: FastifyInstance, deps: AppDeps) {
+  const pdfPreview = deps.pdfPreview ?? new LibreOfficePdfPreviewRenderer();
+
   const auth = async (req: FastifyRequest, reply: FastifyReply) => {
     const user = await deps.getSessionUser(req);
     if (!user) {
@@ -65,19 +74,56 @@ export function registerJobs(app: FastifyInstance, deps: AppDeps) {
     return job;
   });
 
-  app.get("/api/jobs/:id/download", async (req, reply) => {
+  const readConvertedPdf = async (req: FastifyRequest, reply: FastifyReply): Promise<ConvertedPdf | null> => {
     const user = await auth(req, reply);
-    if (!user) return;
+    if (!user) return null;
     const raw = await deps.jobs.getRaw(user.id, (req.params as { id: string }).id);
-    if (!raw) return reply.code(404).send({ error: "not found" });
+    if (!raw) {
+      reply.code(404).send({ error: "not found" });
+      return null;
+    }
     if (raw.status !== "success" || !raw.outputKey) {
-      return reply.code(409).send({ error: "not converted" });
+      reply.code(409).send({ error: "not converted" });
+      return null;
     }
     const bytes = await deps.storage.get(raw.outputKey);
+    return { filename: raw.filename, bytes: Buffer.from(bytes) };
+  };
+
+  const sendPdf = async (req: FastifyRequest, reply: FastifyReply, disposition: PdfDisposition) => {
+    const pdf = await readConvertedPdf(req, reply);
+    if (!pdf) return;
     return reply
       .header("content-type", "application/pdf")
-      .header("content-disposition", downloadDisposition(raw.filename))
-      .send(Buffer.from(bytes));
+      .header("content-disposition", pdfDisposition(pdf.filename, disposition))
+      .header("x-content-type-options", "nosniff")
+      .send(pdf.bytes);
+  };
+
+  app.get("/api/jobs/:id/download", async (req, reply) => {
+    return sendPdf(req, reply, "attachment");
+  });
+
+  app.get("/api/jobs/:id/preview", async (req, reply) => {
+    return sendPdf(req, reply, "inline");
+  });
+
+  app.get("/api/jobs/:id/preview.png", async (req, reply) => {
+    const pdf = await readConvertedPdf(req, reply);
+    if (!pdf) return;
+    try {
+      const image = await pdfPreview.renderFirstPagePng(pdf.bytes);
+      return reply
+        .header("content-type", "image/png")
+        .header("cache-control", "private, max-age=600")
+        .header("x-content-type-options", "nosniff")
+        .send(image);
+    } catch (err) {
+      if (err instanceof PdfPreviewError) {
+        return reply.code(503).send({ error: "preview image unavailable" });
+      }
+      throw err;
+    }
   });
 
   app.get("/api/jobs/:id/quality", async (req, reply) => {

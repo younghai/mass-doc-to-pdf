@@ -17,6 +17,8 @@ fi
 set -a
 source "$ENV_FILE"
 set +a
+API_PORT="${PORT:-18010}"
+NGINX_LISTEN_PORT="${NGINX_LISTEN_PORT:-80}"
 
 # Run services as the deploy user (the one invoking sudo), not www-data:
 # LibreOffice/Java (H2Orestart) hang under www-data's restricted environment,
@@ -39,7 +41,8 @@ sed -e "s#__ROOT__#$ROOT#g" -e "s#__USER__#$DEPLOY_USER#g" -e "s#__HOME__#$DEPLO
 sed -e "s#__ROOT__#$ROOT#g" -e "s#__USER__#$DEPLOY_USER#g" -e "s#__HOME__#$DEPLOY_HOME#g" \
   "$ROOT/standalone/systemd/mass-doc-to-pdf-worker.service.in" \
   > /etc/systemd/system/mass-doc-to-pdf-worker.service
-sed "s#__ROOT__#$ROOT#g" "$ROOT/standalone/nginx/mass-doc-to-pdf.conf.in" \
+sed -e "s#__ROOT__#$ROOT#g" -e "s#__API_PORT__#$API_PORT#g" -e "s#__NGINX_LISTEN_PORT__#$NGINX_LISTEN_PORT#g" \
+  "$ROOT/standalone/nginx/mass-doc-to-pdf.conf.in" \
   > /etc/nginx/sites-available/mass-doc-to-pdf.conf
 
 ln -sf /etc/nginx/sites-available/mass-doc-to-pdf.conf /etc/nginx/sites-enabled/mass-doc-to-pdf.conf
@@ -47,12 +50,15 @@ rm -f /etc/nginx/sites-enabled/default
 
 systemctl daemon-reload
 if [ "${OFFICE_ENGINE:-builtin}" = "hwp-sidecar" ]; then
-  systemctl enable --now mass-doc-to-pdf-sidecar
+  systemctl enable mass-doc-to-pdf-sidecar
+  systemctl restart mass-doc-to-pdf-sidecar
 else
   systemctl disable --now mass-doc-to-pdf-sidecar 2>/dev/null || true
 fi
-systemctl enable --now mass-doc-to-pdf-api
-systemctl enable --now mass-doc-to-pdf-worker
+systemctl enable mass-doc-to-pdf-api
+systemctl restart mass-doc-to-pdf-api
+systemctl enable mass-doc-to-pdf-worker
+systemctl restart mass-doc-to-pdf-worker
 nginx -t
 systemctl reload nginx
 

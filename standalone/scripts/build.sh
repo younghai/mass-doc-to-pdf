@@ -11,7 +11,7 @@ pnpm --filter @hwptopdf/api exec prisma generate
 # typecheck and tests can resolve it on a clean checkout.
 pnpm -r build
 pnpm -r typecheck
-pnpm -r test
+NODE_ENV=test pnpm -r test
 
 mkdir -p data/objects
 

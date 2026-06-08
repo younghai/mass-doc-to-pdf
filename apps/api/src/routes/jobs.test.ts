@@ -9,6 +9,7 @@ let db: ReturnType<typeof setupTestDb>;
 let userId: string;
 let jobs: JobService;
 const pdf = Buffer.from("%PDF-1.7 output");
+const png = Buffer.from("\x89PNG\r\n\x1a\npreview");
 
 const noEngine: Converter = { name: "x", async convert() { return Buffer.from(""); } };
 
@@ -33,13 +34,17 @@ function makeApp() {
         : new Uint8Array(pdf),
     ),
   };
+  const pdfPreview = {
+    renderFirstPagePng: vi.fn(async () => png),
+  };
   const deps: AppDeps = {
     registry: { forFormat: () => noEngine },
     storage,
     jobs,
+    pdfPreview,
     getSessionUser: async () => ({ id: userId, email: "u@x.c" }),
   };
-  return { app: buildApp(deps), storage };
+  return { app: buildApp(deps), storage, pdfPreview };
 }
 
 beforeAll(async () => {
@@ -86,13 +91,43 @@ describe("jobs routes", () => {
   it("download returns PDF for a successful job, 409 for a failed one", async () => {
     const { app } = makeApp();
     const list = (await app.inject({ method: "GET", url: "/api/jobs" })).json() as Array<{ id: string; status: string }>;
-    const okJob = list.find((j) => j.status === "success")!;
-    const badJob = list.find((j) => j.status === "failed")!;
+    const okJob = list.find((j) => j.status === "success");
+    const badJob = list.find((j) => j.status === "failed");
+    if (!okJob || !badJob) throw new Error("missing job fixture");
     const dl = await app.inject({ method: "GET", url: `/api/jobs/${okJob.id}/download` });
     expect(dl.statusCode).toBe(200);
     expect(dl.headers["content-type"]).toContain("application/pdf");
+    expect(dl.headers["content-disposition"]).toContain("attachment");
     const bad = await app.inject({ method: "GET", url: `/api/jobs/${badJob.id}/download` });
     expect(bad.statusCode).toBe(409);
+  });
+
+  it("preview returns an inline PDF for iframe rendering", async () => {
+    const { app } = makeApp();
+    const list = (await app.inject({ method: "GET", url: "/api/jobs" })).json() as Array<{ id: string; status: string }>;
+    const okJob = list.find((j) => j.status === "success");
+    if (!okJob) throw new Error("missing successful job");
+
+    const preview = await app.inject({ method: "GET", url: `/api/jobs/${okJob.id}/preview` });
+
+    expect(preview.statusCode).toBe(200);
+    expect(preview.headers["content-type"]).toContain("application/pdf");
+    expect(preview.headers["content-disposition"]).toContain("inline");
+    expect(preview.body.slice(0, 5)).toBe("%PDF-");
+  });
+
+  it("preview image returns the first PDF page as PNG", async () => {
+    const { app, pdfPreview } = makeApp();
+    const list = (await app.inject({ method: "GET", url: "/api/jobs" })).json() as Array<{ id: string; status: string }>;
+    const okJob = list.find((j) => j.status === "success");
+    if (!okJob) throw new Error("missing successful job");
+
+    const preview = await app.inject({ method: "GET", url: `/api/jobs/${okJob.id}/preview.png` });
+
+    expect(preview.statusCode).toBe(200);
+    expect(preview.headers["content-type"]).toContain("image/png");
+    expect(preview.body.slice(0, 8)).toBe("\x89PNG\r\n\x1a\n");
+    expect(pdfPreview.renderFirstPagePng).toHaveBeenCalledWith(pdf);
   });
 
   it("download supports Korean PPT filenames in content disposition", async () => {

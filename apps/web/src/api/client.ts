@@ -45,6 +45,8 @@ export const api = {
     return asJson<JobDTO>(r);
   },
   downloadUrl: (id: string) => `/api/jobs/${id}/download`,
+  previewUrl: (id: string) => `/api/jobs/${id}/preview`,
+  previewImageUrl: (id: string) => `/api/jobs/${id}/preview.png`,
   signInUrl: () => "/api/auth/signin/google",
   signOutUrl: () => "/api/auth/signout",
 };

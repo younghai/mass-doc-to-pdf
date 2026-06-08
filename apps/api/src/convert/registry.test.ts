@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { QualityFallbackConverter } from "./engines/qualityFallback.js";
 import { buildRegistry, type EngineConfig } from "./registry.js";
 
 describe("buildRegistry", () => {
@@ -7,6 +8,13 @@ describe("buildRegistry", () => {
     hwpSidecarUrl: "http://h",
     officeEngine: "gotenberg",
     rhwp: { enabled: true, pythonPath: "python3", timeoutMs: 120_000 },
+    rhwpCli: {
+      enabled: false,
+      cliPath: "rhwp",
+      timeoutMs: 120_000,
+      fontPaths: [],
+      mode: "pdf",
+    },
   };
   it("defaults office->gotenberg, hwp->quality fallback chain", () => {
     const r = buildRegistry(base);
@@ -25,6 +33,31 @@ describe("buildRegistry", () => {
   it("supports a quick HWP mode for throughput-first batches", () => {
     const r = buildRegistry(base);
     expect(r.forFormat("hwp", { qualityMode: "quick" }).name).toBe("hwp-quick-chain");
+  });
+  it("places the rhwp Rust CLI renderer before the Python rhwp worker in precise mode", () => {
+    const c = buildRegistry(base).forFormat("hwp");
+    expect(c).toBeInstanceOf(QualityFallbackConverter);
+    if (c instanceof QualityFallbackConverter) {
+      expect(c.engineNames()).toEqual([
+        "rhwp-cli-pdf",
+        "rhwp",
+        "h2orestart",
+        "builtin-office",
+      ]);
+    }
+  });
+  it("adds the optional visual-preservation raster attempt after rhwp CLI PDF", () => {
+    const c = buildRegistry({ ...base, rhwpCli: { ...base.rhwpCli, mode: "raster" } }).forFormat("hwp");
+    expect(c).toBeInstanceOf(QualityFallbackConverter);
+    if (c instanceof QualityFallbackConverter) {
+      expect(c.engineNames()).toEqual([
+        "rhwp-cli-pdf",
+        "rhwp-cli-raster",
+        "rhwp",
+        "h2orestart",
+        "builtin-office",
+      ]);
+    }
   });
   it("can route office documents to the LibreOffice sidecar for standalone deployment", () => {
     const r = buildRegistry({ ...base, officeEngine: "hwp-sidecar" });

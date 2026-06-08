@@ -24,7 +24,7 @@ COPYFILE_DISABLE=1 tar \
   --exclude ".env" \
   --exclude ".env.*" \
   --exclude ".omc" \
-  --exclude ".omx/state" \
+  --exclude ".omx" \
   --exclude "node_modules" \
   --exclude ".pnpm-store" \
   --exclude "apps/web/dist" \

@@ -6,6 +6,7 @@ import type { Storage } from "./storage/s3.js";
 import type { JobService } from "./jobs/jobService.js";
 import type { JobQueue } from "./queue/jobQueue.js";
 import type { SessionUser } from "./auth/plugin.js";
+import type { PdfPreviewRenderer } from "./pdf/preview.js";
 import { registerConvert } from "./routes/convert.js";
 import { registerJobs } from "./routes/jobs.js";
 import { registerStats } from "./routes/stats.js";
@@ -16,6 +17,7 @@ export interface AppDeps {
   jobs: JobService;
   /** When provided, conversions are enqueued for the worker instead of run inline. */
   queue?: JobQueue;
+  pdfPreview?: PdfPreviewRenderer;
   getSessionUser(req: FastifyRequest): Promise<SessionUser | null>;
 }
 

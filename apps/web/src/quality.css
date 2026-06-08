@@ -73,9 +73,28 @@
   margin-top: 1.25rem;
 }
 
-.pdf-preview iframe {
+.pdf-preview-image {
+  display: flex;
   width: 100%;
-  min-height: 28rem;
+  justify-content: center;
+  padding: 1rem;
+  border: 1px solid var(--surface-2);
+  border-radius: 0.55rem;
+  background: #ffffff;
+}
+
+.pdf-preview-image img {
+  display: block;
+  width: auto;
+  max-width: 100%;
+  max-height: 44rem;
+  object-fit: contain;
+}
+
+.pdf-preview-fallback {
+  display: grid;
+  min-height: 12rem;
+  place-items: center;
   border: 1px solid var(--surface-2);
   border-radius: 0.55rem;
   background: var(--surface);

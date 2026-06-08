@@ -1,4 +1,5 @@
 import type { EngineConfig } from "./convert/registry.js";
+import { checkGoogleOAuthReadiness } from "./auth/oauthReadiness.js";
 
 function officeEngine(env: NodeJS.ProcessEnv): EngineConfig["officeEngine"] {
   switch (env.OFFICE_ENGINE) {
@@ -21,6 +22,16 @@ export function loadEngineConfig(env: NodeJS.ProcessEnv): EngineConfig {
       pythonPath: env.RHWP_PYTHON ?? "python3",
       workerScript: env.RHWP_WORKER_SCRIPT || undefined,
       timeoutMs: Number(env.RHWP_TIMEOUT_MS ?? 120_000),
+    },
+    rhwpCli: {
+      enabled: env.RHWP_CLI_ENABLED === "1",
+      cliPath: env.RHWP_CLI_PATH ?? "rhwp",
+      timeoutMs: Number(env.RHWP_CLI_TIMEOUT_MS ?? env.RHWP_TIMEOUT_MS ?? 120_000),
+      fontPaths: (env.RHWP_FONT_PATHS ?? "")
+        .split(":")
+        .map((value) => value.trim())
+        .filter((value) => value.length > 0),
+      mode: env.RHWP_CLI_VISUAL_MODE === "raster" ? "raster" : "pdf",
     },
   };
 
@@ -75,6 +86,12 @@ export function loadAppConfig(env: NodeJS.ProcessEnv): AppConfig {
       "DEV_AUTH=1 bypasses authentication and is refused in production. " +
         "Set DEV_AUTH=0 (use Google OAuth) or, only for trusted internal hosts, ALLOW_DEV_AUTH=1.",
     );
+  }
+  if (env.NODE_ENV === "production" && env.DEV_AUTH !== "1") {
+    const readiness = checkGoogleOAuthReadiness(env);
+    if (!readiness.ok) {
+      throw new Error(`Google OAuth operation login is not ready: ${readiness.issues.join(" ")}`);
+    }
   }
   return {
     engines: loadEngineConfig(env),

@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../api/client";
@@ -50,16 +51,34 @@ function QualityReportPanel({ report }: { readonly report: QualityReport }) {
 }
 
 function PdfPreview({ jobId }: { readonly jobId: string }) {
-  const src = `${api.downloadUrl(jobId)}#page=1&view=FitH`;
+  const [imageFailed, setImageFailed] = useState(false);
+  const previewUrl = api.previewUrl(jobId);
+  const previewImageUrl = api.previewImageUrl(jobId);
   return (
     <section className="pdf-preview" aria-labelledby="pdf-preview-title">
       <div className="section-head">
         <h3 id="pdf-preview-title">PDF 미리보기</h3>
       </div>
-      <iframe title="PDF 첫 페이지 미리보기" src={src} />
+      {imageFailed ? (
+        <div className="pdf-preview-fallback" role="status">
+          <a href={`${previewUrl}#page=1&view=FitH`} target="_blank" rel="noreferrer">
+            PDF 미리보기 새 창 열기
+          </a>
+        </div>
+      ) : (
+        <a
+          className="pdf-preview-image"
+          href={`${previewUrl}#page=1&view=FitH`}
+          target="_blank"
+          rel="noreferrer"
+          aria-label="PDF 첫 페이지 원본 열기"
+        >
+          <img src={previewImageUrl} alt="PDF 첫 페이지 미리보기" onError={() => setImageFailed(true)} />
+        </a>
+      )}
       <div className="preview-pages" aria-label="첫 3페이지 바로가기">
         {[1, 2, 3].map((page) => (
-          <a key={page} href={`${api.downloadUrl(jobId)}#page=${page}`} target="_blank" rel="noreferrer">
+          <a key={page} href={`${previewUrl}#page=${page}`} target="_blank" rel="noreferrer">
             {page}페이지
           </a>
         ))}

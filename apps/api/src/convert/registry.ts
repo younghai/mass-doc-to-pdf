@@ -5,13 +5,14 @@ import { BuiltinOfficeConverter, H2OrestartConverter } from "./engines/h2orestar
 import { HancomConverter, type HancomConfig } from "./engines/hancom.js";
 import { AsposeConverter, type AsposeConfig } from "./engines/aspose.js";
 import { QualityFallbackConverter } from "./engines/qualityFallback.js";
-import { RhwpConverter, type RhwpConfig } from "./engines/rhwp.js";
+import { RhwpCliConverter, RhwpConverter, type RhwpCliConfig, type RhwpConfig } from "./engines/rhwp.js";
 
 export interface EngineConfig {
   gotenbergUrl: string;
   hwpSidecarUrl: string;
   officeEngine: "gotenberg" | "hwp-sidecar" | "builtin";
   rhwp: RhwpConfig;
+  rhwpCli: RhwpCliConfig;
   hancom?: HancomConfig;
   aspose?: AsposeConfig;
 }
@@ -69,6 +70,10 @@ function hwpConverter(cfg: EngineConfig, mode: ConversionMode): Converter {
   }
   return new QualityFallbackConverter("hwp-quality-chain", "hwp", mode, [
     ...(cfg.hancom ? [new HancomConverter(cfg.hancom)] : []),
+    new RhwpCliConverter({ ...cfg.rhwpCli, mode: "pdf" }),
+    ...(cfg.rhwpCli.mode === "raster"
+      ? [new RhwpCliConverter({ ...cfg.rhwpCli, mode: "raster" })]
+      : []),
     new RhwpConverter(cfg.rhwp),
     new H2OrestartConverter(cfg.hwpSidecarUrl),
     new BuiltinOfficeConverter(),

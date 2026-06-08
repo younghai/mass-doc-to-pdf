@@ -8,6 +8,8 @@ import type {
 } from "@hwptopdf/shared";
 
 const PDF_PAGE_RE = /\/Type\s*\/Page\b/g;
+const RHWP_CLI_MIN_PDF_BYTES = 32 * 1024;
+const RHWP_CLI_MIN_BYTES_PER_PAGE = 4 * 1024;
 
 export function reportObjectKey(userId: string, jobId: string): string {
   return `${userId}/report/${jobId}.json`;
@@ -21,6 +23,8 @@ export function pdfPageCount(pdf: Buffer): number | undefined {
 export function gradeForEngine(engine: string): QualityGrade {
   switch (engine) {
     case "rhwp":
+    case "rhwp-cli-pdf":
+    case "rhwp-cli-raster":
     case "hancom":
     case "aspose":
       return "good";
@@ -55,6 +59,32 @@ function recommendedAction(status: QualityStatus, grade: QualityGrade): string {
   return "표, 이미지, 각주가 많은 문서는 원본 대조 검수를 권장합니다.";
 }
 
+function isHwpFormat(format: DocFormat): boolean {
+  return format === "hwp";
+}
+
+function isRhwpQualityRiskEngine(engine: string): boolean {
+  return engine === "rhwp" || engine === "rhwp-cli-pdf" || engine === "rhwp-cli-raster";
+}
+
+function intrinsicWarnings(input: {
+  readonly format: DocFormat;
+  readonly selectedEngine: string;
+  readonly pdfBytes: number;
+  readonly pageCount: number | undefined;
+}): readonly string[] {
+  if (!isHwpFormat(input.format) || !isRhwpQualityRiskEngine(input.selectedEngine)) return [];
+
+  const warnings: string[] = [];
+  if (input.pdfBytes < RHWP_CLI_MIN_PDF_BYTES) {
+    warnings.push("rhwp_small_pdf_review");
+  }
+  if (input.pageCount && input.pdfBytes / input.pageCount < RHWP_CLI_MIN_BYTES_PER_PAGE) {
+    warnings.push("rhwp_low_bytes_per_page_review");
+  }
+  return warnings;
+}
+
 export function buildQualityReport(input: {
   readonly jobId: string;
   readonly filename: string;
@@ -69,10 +99,19 @@ export function buildQualityReport(input: {
 }): QualityReport {
   const pageCount = pdfPageCount(input.pdf);
   const grade = gradeForEngine(input.selectedEngine);
+  const warnings = [
+    ...input.warnings,
+    ...intrinsicWarnings({
+      format: input.format,
+      selectedEngine: input.selectedEngine,
+      pdfBytes: input.pdf.byteLength,
+      pageCount,
+    }),
+  ];
   const status = statusFor({
     grade,
     attempts: input.attempts,
-    warnings: input.warnings,
+    warnings,
     pageCount,
   });
   return {
@@ -91,7 +130,7 @@ export function buildQualityReport(input: {
       sourceBytes: input.sourceBytes,
     },
     attempts: input.attempts,
-    warnings: input.warnings,
+    warnings,
     createdAt: input.createdAt ?? new Date().toISOString(),
   };
 }

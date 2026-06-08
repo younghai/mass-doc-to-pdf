@@ -26,9 +26,14 @@ export class QualityFallbackConverter implements ReportingConverter {
     return (await this.convertWithReport(input)).pdf;
   }
 
+  engineNames(): readonly string[] {
+    return this.engines.map((engine) => engine.name);
+  }
+
   async convertWithReport(input: ConvertInput): Promise<ConversionResult> {
     const attempts: QualityAttempt[] = [];
     const warnings: string[] = [];
+    let reviewResult: ConversionResult | undefined;
 
     for (const engine of this.engines) {
       const started = Date.now();
@@ -38,21 +43,27 @@ export class QualityFallbackConverter implements ReportingConverter {
           : { pdf: await engine.convert(input) };
         const durationMs = Date.now() - started;
         attempts.push({ engine: engine.name, status: "success", durationMs });
-        return {
+        const report = buildQualityReport({
+          jobId: "",
+          filename: input.filename,
+          format: this.format,
+          mode: this.mode,
+          selectedEngine: engine.name,
           pdf: result.pdf,
-          report: buildQualityReport({
-            jobId: "",
-            filename: input.filename,
-            format: this.format,
-            mode: this.mode,
-            selectedEngine: engine.name,
-            pdf: result.pdf,
-            sourceBytes: input.data.byteLength,
-            attempts: [...attempts],
-            warnings: [...warnings, ...(result.report?.warnings ?? [])],
-            createdAt: result.report?.createdAt,
-          }),
+          sourceBytes: input.data.byteLength,
+          attempts: [...attempts],
+          warnings: [...warnings, ...(result.report?.warnings ?? [])],
+          createdAt: result.report?.createdAt,
+        });
+        const conversionResult = {
+          pdf: result.pdf,
+          report,
         };
+        if (this.mode === "precise" && report.status === "review") {
+          reviewResult ??= conversionResult;
+          continue;
+        }
+        return conversionResult;
       } catch (err) {
         const message = errorMessage(err);
         attempts.push({ engine: engine.name, status: "failed", durationMs: Date.now() - started, error: message });
@@ -60,6 +71,7 @@ export class QualityFallbackConverter implements ReportingConverter {
       }
     }
 
+    if (reviewResult) return reviewResult;
     throw new ConversionError(this.name, `all converters failed: ${warnings.join(" | ")}`);
   }
 }
