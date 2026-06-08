@@ -1,21 +1,156 @@
-# hwptopdf
+# Mass Doc to PDF
 
-문서(**HWP · HWPX · DOCX · XLSX · PPTX** 및 레거시 Office)를 **PDF로 변환**하는 풀스택 웹 서비스.
-Google 로그인, 파일 업로드, 성공/실패 케이스 뷰, 변환 성공률 대시보드를 제공합니다.
+HWP, HWPX, Word, PowerPoint, Excel 문서를 PDF로 변환하는 대용량 문서 변환 서비스입니다.
+단일 파일 변환뿐 아니라 폴더 단위 일괄 업로드, 작업 큐, 변환 품질 리포트, PDF 미리보기, 실패/재시도 분리를 목표로 합니다.
+
+## 서비스 개요
+
+이 서비스는 사용자가 업로드한 문서를 변환 엔진 체인에 태우고, 결과 PDF와 품질 판단 정보를 함께 제공합니다.
+사용자는 단순히 "변환 성공" 여부만 보는 것이 아니라 어떤 엔진으로 변환되었는지, 결과가 검토 대상인지, 미리보기로 확인할 수 있는지까지 확인할 수 있습니다.
+
+핵심 기능:
+
+- 문서 업로드: HWP/HWPX, DOC/DOCX, PPT/PPTX, XLS/XLSX
+- PDF 변환: rhwp-cli, Python rhwp, H2Orestart/LibreOffice, builtin fallback, 선택형 상용 엔진
+- 작업 큐: pending, running, success, failed 상태 추적
+- 대량 처리: 폴더 내 다수 파일 업로드와 작업별 결과 분리
+- 품질 리포트: 엔진명, 품질 등급, 경고, PDF 크기, 페이지/미리보기 정보
+- PDF 확인: 다운로드, 브라우저 미리보기, PNG 미리보기 fallback
+- 배포 방식: Docker 기반 개발/운영, Docker 없는 Ubuntu systemd/nginx 단독 배포
+
+## 목적
+
+문서 변환 서비스에서 가장 큰 문제는 "성공으로 표시됐지만 PDF가 원본과 다름"입니다.
+이 프로젝트는 변환 결과를 운영자가 판단할 수 있도록 성공, 실패, 저품질 의심, 재시도 대상을 분리하는 것을 목적으로 합니다.
+
+운영 목적:
+
+- HWP/HWPX 문서의 변환 성공률과 렌더링 품질을 지속 측정
+- 1,000개 수준의 대량 변환에서도 전체 작업이 중단되지 않도록 job 단위로 격리
+- 이미지, 표, 폰트, 페이지네이션 문제를 품질 리포트와 미리보기로 조기 발견
+- Docker 없는 서버에도 소스 기반으로 배포할 수 있는 독립 운영 패키지 제공
+- 향후 Hancom SDK 같은 정밀 엔진을 붙일 수 있는 엔진 레지스트리 구조 유지
+
+## 활용 범위
+
+| 영역 | 포함 범위 |
+|---|---|
+| 입력 문서 | HWP, HWPX, DOC, DOCX, PPT, PPTX, XLS, XLSX |
+| 출력 | PDF, PDF 다운로드, PDF inline preview, PNG preview |
+| 사용자 흐름 | 로그인, 단일 업로드, 폴더 일괄 업로드, 작업 큐 확인, 상세 결과 확인 |
+| 운영 흐름 | API health, sidecar health, worker, quality report, smoke test |
+| 배포 | Docker compose, GitHub Actions, Docker 없는 `standalone/` 배포 |
+| 품질 관리 | 엔진명 기록, 품질 등급, 경고, 실패 원인, 코퍼스 리포트 |
+
+현재 범위 밖이거나 별도 검증이 필요한 항목:
+
+- 모든 HWP 문서의 100% 원본 동일 렌더링 보장
+- Google OAuth 외부 운영 로그인 자동 구성
+- 상용 Hancom SDK/Aspose 라이선스 자동 제공
+- 50/100/1,000개 실제 고객 문서 코퍼스의 완전한 품질 보증
+- 암호 문서, 손상 문서, 매우 오래된 HWP 버전의 완전 지원
+
+## 전체 서비스 흐름
+
+```mermaid
+flowchart TD
+  User["사용자"] --> Web["Web UI"]
+  Web --> Upload["문서 또는 폴더 업로드"]
+  Upload --> Api["API 파일 검증"]
+  Api --> Job["ConversionJob 생성"]
+  Job --> Queue{"큐 사용 여부"}
+  Queue -- "USE_QUEUE=1" --> Worker["Worker가 job claim"]
+  Queue -- "inline mode" --> Inline["API 프로세스에서 즉시 변환"]
+  Worker --> Engine["변환 엔진 체인"]
+  Inline --> Engine
+  Engine --> Quality["품질 리포트 생성"]
+  Quality --> Gate{"품질 판정"}
+  Gate -- "passed 또는 review" --> Store["PDF, preview, report 저장"]
+  Gate -- "failed" --> Fail["실패 상태와 원인 기록"]
+  Store --> Result["작업 상세, 미리보기, 다운로드"]
+  Fail --> Retry["재시도 또는 사용자 조치"]
+```
+
+## 변환 엔진 Workflow
+
+HWP/HWPX는 문서 구조와 렌더링 품질 편차가 커서 하나의 엔진만 사용하지 않습니다.
+정밀 엔진부터 fallback까지 순서대로 시도하고, 결과를 품질 리포트에 남깁니다.
+
+```mermaid
+flowchart LR
+  Input["HWP/HWPX 입력"] --> Hancom{"Hancom SDK 설정됨"}
+  Hancom -- "yes" --> HancomEngine["Hancom precise"]
+  Hancom -- "no 또는 실패" --> RhwpCli["rhwp-cli export-pdf"]
+  HancomEngine --> Quality["품질 검사"]
+  RhwpCli --> RhwpPy["Python rhwp fallback"]
+  RhwpPy --> H2O["H2Orestart / LibreOffice"]
+  H2O --> Builtin["builtin text fallback"]
+  RhwpCli --> Quality
+  RhwpPy --> Quality
+  H2O --> Quality
+  Builtin --> Review["review 또는 failed 처리"]
+  Quality --> Pdf["PDF 결과"]
+```
+
+Office 계열 문서는 LibreOffice 기반 변환을 기본으로 사용하고, 설정된 경우 Aspose 같은 상용 엔진을 우선 사용할 수 있습니다.
+
+## 1,000개 대량 변환 흐름
+
+```mermaid
+flowchart TD
+  Folder["사용자 폴더 선택"] --> Files["브라우저가 파일 목록 구성"]
+  Files --> Limit["파일 수, 크기, 확장자 검증"]
+  Limit --> Submit["파일별 업로드 요청"]
+  Submit --> Jobs["job 단위로 큐 적재"]
+  Jobs --> Parallel["worker가 순차 또는 병렬 처리"]
+  Parallel --> Classify["결과 분류"]
+  Classify --> Success["성공"]
+  Classify --> Review["저품질 의심"]
+  Classify --> Failed["실패"]
+  Review --> Manual["미리보기 기반 검수"]
+  Failed --> Retry["원인 확인 후 재시도"]
+  Success --> Download["PDF 다운로드"]
+```
+
+대량 변환에서는 한 파일의 실패가 전체 batch를 멈추지 않는 것이 중요합니다.
+그래서 결과 화면은 성공, 실패, 저품질 의심, 재시도 가능 항목을 분리해서 보여주는 방향으로 설계되어 있습니다.
+
+## 배포 Workflow
+
+```mermaid
+flowchart TD
+  Repo["GitHub source"] --> Choice{"배포 방식"}
+  Choice -- "Docker" --> Compose["docker-compose up -d --build"]
+  Choice -- "Docker 없음" --> Package["standalone/scripts/package.sh"]
+  Package --> Upload["서버 /opt/mass-doc-to-pdf 업로드"]
+  Upload --> Install["install-ubuntu.sh"]
+  Install --> Env[".env.standalone 설정"]
+  Env --> Build["build.sh"]
+  Build --> Db["init-db.sh"]
+  Db --> Systemd["install-systemd.sh"]
+  Systemd --> Smoke["smoke-test.sh"]
+  Compose --> Health["health check"]
+  Smoke --> Health
+  Health --> Operate["nginx + API + sidecar + worker 운영"]
+```
+
+Docker 없이 운영하는 서버는 [`standalone/`](standalone/) 폴더가 기준입니다.
+상세 절차는 [`standalone/README.md`](standalone/README.md), 운영 검증 항목은 [`standalone/OPERATIONS-VALIDATION.md`](standalone/OPERATIONS-VALIDATION.md)를 확인하세요.
 
 ## 구성
 
-```
-apps/web   React + Vite 대시보드 SPA (로그인 · 업로드 · 변환내역 · 상세 · 대시보드)
-apps/api   Fastify 백엔드 (인증 · 변환 라우팅 · 영속성 · 저장소 · 통계)
+```text
+apps/web          React + Vite 대시보드 SPA
+apps/api          Fastify API, 인증, 변환 라우팅, 작업 큐, 품질 리포트
 packages/shared   web/api 공용 DTO 타입
-hwp-sidecar   LibreOffice + H2Orestart 변환 사이드카 (HWP/HWPX)
-e2e        Playwright 게이트 e2e (수동 실행)
+hwp-sidecar       LibreOffice + H2Orestart 변환 sidecar
+standalone        Docker 없는 Ubuntu systemd/nginx 배포 패키지
+e2e               Playwright 기반 브라우저 검증
 ```
 
-## 빠른 설치 및 실행
+## 빠른 실행
 
-새로 clone한 환경에서 가장 빠르게 전체 서비스를 띄우는 방법입니다. Docker가 실행 중이어야 합니다.
+개발 환경에서 전체 스택을 가장 빠르게 실행하는 방법입니다.
 
 ```bash
 git clone https://github.com/younghai/mass-doc-to-pdf.git
@@ -29,114 +164,19 @@ cp .env.example .env
 openssl rand -base64 32
 ```
 
-그 다음 전체 스택을 실행합니다.
+Docker 기반 실행:
 
 ```bash
 docker-compose up -d --build
-```
-
-실행 후 확인:
-
-```bash
 curl http://localhost:8010/health
 open http://localhost:8081
 ```
 
-기본값은 `DEV_AUTH=1`이라 Google OAuth 없이 로컬 운영자 계정으로 바로 서비스 UI를 확인할 수 있습니다.
-메뉴에서 `문서 업로드`, `폴더 일괄 변환`, `작업 큐`를 사용할 수 있습니다.
+기본값은 `DEV_AUTH=1`이라 Google OAuth 없이 로컬 운영자 계정으로 UI를 확인할 수 있습니다.
 
-## 변환 엔진 매트릭스
-
-| 입력 형식 | 1차(상용, 고충실도) | 폴백(무료 OSS) |
-|-----------|--------------------|----------------|
-| DOCX/XLSX/PPTX/Office | **Aspose** (`ASPOSE_*` 설정 시) | **Gotenberg**(LibreOffice) |
-| HWP/HWPX | **Hancom Hwp SDK** (`HANCOM_*` 설정 시) | **LibreOffice + H2Orestart** 사이드카 |
-
-상용 자격증명이 없으면 자동으로 무료 엔진으로 폴백합니다. 포맷은 확장자 + OLE/ZIP 매직바이트로 분류합니다.
-
-## 아키텍처
-
-```
-        브라우저
-           │
-        web (nginx, SPA + /api 프록시)
-           │
-        api (Fastify)
-     ┌─────┼───────────────┬──────────────┐
- Auth.js  변환 레지스트리   Prisma         S3 스토리지
- (Google) ├─ Gotenberg     (SQLite:        (MinIO)
-          └─ HWP 사이드카    users/sessions/
-                            jobs)
-```
-
-- **인증**: `@auth/core` + `@auth/prisma-adapter`(Google OAuth)를 Fastify에 브리지. 세션/유저는 Prisma+SQLite.
-- **저장소**: 업로드 원본과 결과 PDF는 S3 호환(MinIO)에 `{userId}/src/…`, `{userId}/out/…` 키로 저장.
-- **잡 기록**: 모든 변환은 `ConversionJob`(파일명·형식·크기·상태·엔진·소요시간·오류)으로 기록 → 대시보드 통계.
-
-## 로컬 개발
+Docker 없는 서버 배포:
 
 ```bash
-pnpm install
-# 백엔드 (별도 터미널) — DB 마이그레이션 후 실행
-cd apps/api && DATABASE_URL="file:./prisma/dev.db" pnpm prisma migrate deploy
-AUTH_SECRET=$(openssl rand -base64 32) DEV_AUTH=1 pnpm dev
-# 프론트엔드 (별도 터미널) — /api 는 localhost:8000 으로 프록시
-cd apps/web && pnpm dev   # http://localhost:5173
-```
-
-Gotenberg/MinIO/HWP 사이드카는 docker-compose로 띄우거나 개별 실행하세요.
-`DEV_AUTH=1`은 운영 흐름 검증용 로컬 세션을 자동으로 사용합니다. 실제 Google OAuth를 쓰려면
-`DEV_AUTH=0 GOOGLE_CLIENT_ID=... GOOGLE_CLIENT_SECRET=...`로 실행하고 Google 리디렉션 URI
-`http://localhost:5173/api/auth/callback/google`를 등록하세요.
-
-## Docker로 전체 실행
-
-```bash
-cp .env.example .env        # AUTH_SECRET 채우기, 기본 DEV_AUTH=1
-docker-compose up -d --build
-# web  → http://localhost:8081
-# api  → http://localhost:8010/health
-```
-
-Docker 기본값은 `DEV_AUTH=1`입니다. 실제 Google OAuth를 쓰려면 `.env`에서 `DEV_AUTH=0`으로 바꾸고
-Docker 환경의 Google 리디렉션 URI `http://localhost:8081/api/auth/callback/google`를 등록하세요.
-
-## GitHub 배포
-
-GitHub Actions로 GHCR 이미지를 게시하고 Docker 서버에 SSH 배포할 수 있도록 `.github/`,
-`docker-compose.prod.yml`, `.env.production.example`이 준비되어 있습니다.
-
-배포 흐름:
-
-1. GitHub에 repository 생성 후 이 프로젝트를 push합니다.
-2. GitHub Actions의 `Publish Images to GHCR` 워크플로로 이미지를 게시합니다.
-3. 서버 배포용 GitHub Secrets를 등록합니다.
-4. `Deploy over SSH` 워크플로를 실행합니다.
-
-```bash
-cp .env.production.example .env.production
-# 운영 비밀값을 채운 뒤, 같은 내용을 GitHub Secrets의 PRODUCTION_ENV에 등록
-```
-
-필수 Secrets:
-
-| Secret | 설명 |
-|--------|------|
-| `DEPLOY_HOST` | Docker 서버 IP 또는 도메인 |
-| `DEPLOY_USER` | Docker 실행 권한이 있는 SSH 사용자 |
-| `DEPLOY_SSH_KEY` | 배포용 private SSH key |
-| `DEPLOY_PATH` | 서버 배포 경로 예: `/opt/mass-doc-to-pdf` |
-| `PRODUCTION_ENV` | `.env.production` 전체 내용 |
-
-자세한 절차와 필요한 GitHub Secrets는 [`.github/DEPLOYMENT.md`](.github/DEPLOYMENT.md)를 확인하세요.
-
-## Docker 없이 단독 서버 운영
-
-Docker를 쓰지 않는 서버에는 [`standalone/`](standalone/) 폴더를 사용합니다. 이 경로는 MinIO/Gotenberg 없이
-로컬 파일 저장소와 LibreOffice/H2Orestart sidecar만으로 서비스를 실행하도록 구성되어 있습니다.
-
-```bash
-# 선택: 서버로 복사할 독립 배포 폴더/tarball 생성
 standalone/scripts/package.sh
 
 cd /opt/mass-doc-to-pdf
@@ -148,50 +188,103 @@ sudo standalone/scripts/install-systemd.sh
 standalone/scripts/smoke-test.sh
 ```
 
-단독 운영 기본값:
+단독 운영 기본 포트:
 
-- API: `127.0.0.1:18010`
-- 변환 sidecar: `127.0.0.1:18080`
-- Web/Nginx: `80`
-- 데이터: `./data/app.db`, `./data/objects`
+| 구성요소 | 기본값 |
+|---|---|
+| Web/Nginx | `80` |
+| API | `127.0.0.1:18010` |
+| sidecar | `127.0.0.1:18080` |
+| DB | `./data/app.db` |
+| 파일 저장소 | `./data/objects` |
+
+## 화면과 사용 방법
+
+| 화면 | 목적 |
+|---|---|
+| `/service/upload` | 단일 문서 업로드와 즉시 변환 결과 확인 |
+| `/service/batch` | 폴더 또는 다수 파일 일괄 변환 |
+| `/service/jobs` | 작업 큐, 성공/실패/진행 상태 확인 |
+| job detail | 엔진명, 품질 등급, 경고, 미리보기, 다운로드 확인 |
+| dashboard | 변환 성공률과 상태별 작업 집계 |
+
+기본 사용 순서:
+
+1. 서비스 접속 후 로그인합니다. 개발/내부 운영은 `DEV_AUTH=1`로 바로 진입할 수 있습니다.
+2. `문서 업로드` 또는 `폴더 일괄 변환`에서 파일을 선택합니다.
+3. 작업 큐에서 변환 상태를 확인합니다.
+4. 변환 완료 후 PDF 미리보기 또는 PNG 미리보기로 결과를 확인합니다.
+5. 품질 등급이 `review`이거나 경고가 있으면 원본 대비 검수 후 재시도 또는 정밀 엔진 적용을 판단합니다.
 
 ## API 계약
 
-| 메서드 · 경로 | 설명 |
-|---------------|------|
-| `POST /api/convert` | 멀티파트 `file` 업로드 → 작업 등록 → `running` 잡 DTO 반환(202) |
-| `GET /api/jobs[?status=pending\|running\|success\|failed]` | 내 변환 내역(최신순, 상태 필터) |
-| `GET /api/jobs/:id` | 잡 상세 DTO |
-| `GET /api/jobs/:id/download` | 결과 PDF (성공 시) · 409(미변환) |
-| `GET /api/stats` | `{ total, success, failed, running, pending, successRate }` |
-| `GET /api/auth/*` | Auth.js (Google 로그인/콜백/세션/로그아웃) |
-| `GET /health` | 헬스 체크 |
+| 메서드 및 경로 | 설명 |
+|---|---|
+| `POST /api/convert` | 멀티파트 `file` 업로드 후 변환 작업 생성 |
+| `GET /api/jobs` | 내 변환 작업 목록 |
+| `GET /api/jobs?status=pending` | 상태별 작업 필터 |
+| `GET /api/jobs/:id` | 작업 상세 |
+| `GET /api/jobs/:id/download` | 결과 PDF 다운로드 |
+| `GET /api/jobs/:id/preview` | PDF inline preview |
+| `GET /api/jobs/:id/preview.png` | PNG preview fallback |
+| `GET /api/jobs/:id/quality` | 품질 리포트 |
+| `GET /api/stats` | 전체 작업 통계 |
+| `GET /health` | API health check |
 
-## 테스트
+## 품질 상태 모델
+
+| 상태 | 의미 | 운영 조치 |
+|---|---|---|
+| `passed` | 자동 검사 기준 통과 | 다운로드 또는 사용자 전달 가능 |
+| `review` | 변환은 됐지만 품질 의심 | 미리보기 확인, 원본 비교, 필요 시 정밀 엔진 재시도 |
+| `failed` | 변환 실패 | 실패 원인 확인 후 재시도 또는 파일 조치 |
+
+품질 리포트는 다음 정보를 중심으로 확인합니다.
+
+- 선택된 변환 엔진
+- PDF 생성 여부와 파일 크기
+- preview 생성 여부
+- 변환 경고와 실패 원인
+- batch 내 성공/실패/review 분포
+- HWP/HWPX 코퍼스 리포트의 엔진별 성공률
+
+## 테스트와 검증
 
 ```bash
-pnpm -r test        # 전 패키지 단위/통합 테스트 (네트워크 불필요)
+pnpm -r test
 pnpm -r typecheck
 pnpm -r build
 ```
 
-e2e는 게이트 처리되어 기본 실행에서 제외됩니다. 전체 스택을 띄운 뒤:
+standalone 운영 패키지는 다음 스크립트로 검증합니다.
+
+```bash
+bash -n standalone/scripts/*.sh
+standalone/scripts/smoke-test.sh
+standalone/scripts/quality-report-summary.sh <report-dir>
+```
+
+브라우저 기반 검증이 필요할 때는 e2e 스택을 띄운 뒤 Playwright를 실행합니다.
 
 ```bash
 docker-compose up -d --build
-cd e2e && pnpm install --ignore-workspace
+cd e2e
+pnpm install --ignore-workspace
 RUN_E2E=1 pnpm test
 ```
 
-## 충실도 주의사항
+## 운영상 주의사항
 
-- **HWP/HWPX**: 순수 OSS(LibreOffice + H2Orestart)는 복잡한 정부 양식·병합셀·수식에서 ~10–20% 레이아웃 손실이 발생할 수 있습니다. 충실도가 중요하면 **Hancom Hwp SDK**(`HANCOM_*`)를 설정하세요. **레거시 HWP v3는 H2Orestart 미지원** — HWPX로 정규화를 권장합니다.
-- **Office**: LibreOffice 기반 변환은 SmartArt·차트에서 일부 차이가 날 수 있습니다. 계약상 충실도가 필요하면 **Aspose**(`ASPOSE_*`)를 사용하세요.
-- CJK 폰트가 컨테이너에 설치되어 있어야 한글이 깨지지 않습니다(사이드카에 나눔/Noto CJK 포함).
+- HWP/HWPX는 문서 버전, 폰트, 표, 이미지, 각주, 머리말/꼬리말에 따라 렌더링 편차가 생길 수 있습니다.
+- builtin fallback은 텍스트 추출 중심이므로 원본 서식을 보존해야 하는 문서에는 `review` 또는 실패로 취급하는 것이 안전합니다.
+- 외부 사용자용 Google OAuth는 `DEV_AUTH=0`, DNS 도메인, HTTPS, Google Cloud Console redirect URI 등록이 필요합니다.
+- 대량 batch 운영 전에는 실제 HWP/HWPX 샘플 50개 또는 100개 이상으로 품질 코퍼스 리포트를 먼저 생성해야 합니다.
+- 운영 DB migration과 production DB 명령은 별도 승인과 rollback 계획 없이 자동 실행하지 않습니다.
 
-## Future Work
+## 향후 고도화
 
-- **1,000+ 배치 파이프라인**: 잡 큐, warm 워커 풀, `maxTasksPerProcess` 재활용, 작업 타임아웃, 멱등 재시도, 수평 오토스케일.
-- **충실도 벤치마크 하니스**: 실제 문서 코퍼스로 엔진 품질/속도 측정 후 fleet 규모 산정.
-- **HWP→HWPX 정규화** 사전 단계(KS X 6101 개방 표준, 한국 정부 2026-10 의무화).
-- **프리사인드 직접 업로드**, 재시도 워커, 레이트 리밋, 관측성(메트릭/트레이싱), Postgres 이관.
+- rhwp-cli raster 모드: 이미지 PDF 기반 시각 보존 fallback
+- Hancom SDK 정밀 변환 플랜: 공공기관/기업용 고충실도 옵션
+- 1,000개 batch 리포트: 성공, 실패, review, 재시도 가능률 집계
+- 원본 대비 자동 품질 지표: 페이지 수, 텍스트 추출 일치율, 이미지/표 보존율
+- 운영 UI 고도화: 담당자, 상태, 재시도, 검수 메모, 증거 링크를 포함한 작업 큐
