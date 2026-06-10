@@ -73,7 +73,7 @@ test("successful job shows quality report details when available", async () => {
   renderDetail();
 
   await waitFor(() => expect(screen.getByText("품질 리포트")).toBeInTheDocument());
-  expect(screen.getByText("저품질 의심")).toBeInTheDocument();
+  expect(screen.getByText("저품질 의심 — 검수 권장")).toBeInTheDocument();
   expect(screen.getByText("정밀 변환")).toBeInTheDocument();
   expect(screen.getByText("고품질")).toBeInTheDocument();
   expect(screen.getAllByText("rhwp").length).toBeGreaterThan(0);
@@ -88,13 +88,13 @@ test("successful job shows a first-page PDF preview", async () => {
   renderDetail();
 
   await waitFor(() => expect(screen.getByText("PDF 미리보기")).toBeInTheDocument());
-  expect(screen.getByTitle("PDF 첫 페이지 미리보기")).toHaveAttribute(
+  expect(screen.getByAltText("PDF 첫 페이지 미리보기")).toHaveAttribute(
     "src",
-    "/api/jobs/1/download#page=1&view=FitH",
+    "/api/jobs/1/preview.png",
   );
   expect(screen.getByRole("link", { name: "3페이지" })).toHaveAttribute(
     "href",
-    "/api/jobs/1/download#page=3",
+    "/api/jobs/1/preview#page=3",
   );
 });
 

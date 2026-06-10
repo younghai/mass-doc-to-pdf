@@ -12,8 +12,9 @@ const engine: Converter = { name: "x", async convert() { return Buffer.from("");
 function makeApp(authed = true) {
   const deps: AppDeps = {
     registry: { forFormat: () => engine },
-    storage: { put: vi.fn(), get: vi.fn() },
+    storage: { put: vi.fn(), get: vi.fn(), delete: vi.fn() },
     jobs,
+    webOrigin: "http://localhost",
     getSessionUser: async () => (authed ? { id: userId, email: "u@x.c" } : null),
   };
   return buildApp(deps);

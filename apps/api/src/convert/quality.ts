@@ -8,6 +8,7 @@ import type {
 } from "@hwptopdf/shared";
 
 const PDF_PAGE_RE = /\/Type\s*\/Page\b/g;
+const PDF_COUNT_RE = /\/Count\s+(\d+)/g;
 const RHWP_CLI_MIN_PDF_BYTES = 32 * 1024;
 const RHWP_CLI_MIN_BYTES_PER_PAGE = 4 * 1024;
 
@@ -16,7 +17,18 @@ export function reportObjectKey(userId: string, jobId: string): string {
 }
 
 export function pdfPageCount(pdf: Buffer): number | undefined {
-  const count = pdf.toString("latin1").match(PDF_PAGE_RE)?.length ?? 0;
+  const text = pdf.toString("latin1");
+  // /Count N from the Pages tree works for PDF 1.5+ XRef-stream PDFs where
+  // /Type /Page objects are compressed and invisible to the regex below.
+  // The root /Pages node always holds the highest /Count in the document.
+  let maxCount = 0;
+  for (const m of text.matchAll(PDF_COUNT_RE)) {
+    const n = Number(m[1]);
+    if (n > maxCount) maxCount = n;
+  }
+  if (maxCount > 0) return maxCount;
+  // Fallback: count /Type /Page objects — reliable for PDF ≤ 1.4 without XRef streams.
+  const count = text.match(PDF_PAGE_RE)?.length ?? 0;
   return count > 0 ? count : undefined;
 }
 

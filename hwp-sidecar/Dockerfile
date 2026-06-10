@@ -17,5 +17,7 @@ RUN curl -fsSL -o /tmp/H2Orestart.oxt \
 
 COPY app.py safe_filename.py /srv/
 ENV HOME=/tmp
+# Run as nobody to limit blast radius of file-parsing vulnerabilities.
+USER nobody
 EXPOSE 8080
 CMD ["python3", "/srv/app.py"]

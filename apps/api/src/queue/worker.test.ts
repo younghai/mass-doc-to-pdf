@@ -21,6 +21,9 @@ class MemoryStorage implements Storage {
     if (!v) throw Object.assign(new Error("not found"), { code: "ENOENT" });
     return v;
   }
+  async delete(key: string): Promise<void> {
+    this.map.delete(key);
+  }
 }
 
 function registryWith(converter: Converter): Registry {

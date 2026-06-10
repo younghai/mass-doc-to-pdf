@@ -66,7 +66,10 @@ export class JobQueue {
     private readonly prisma: PrismaClient,
     opts: JobQueueOptions = {},
   ) {
-    this.visibilityTimeoutMs = opts.visibilityTimeoutMs ?? 5 * 60_000;
+    // Above the engine-chain worst case (rhwp-cli + rhwp + h2orestart + builtin
+    // can exceed 5 min on a pathological file) so a slow-but-alive worker is not
+    // reclaimed mid-conversion and double-processed.
+    this.visibilityTimeoutMs = opts.visibilityTimeoutMs ?? 15 * 60_000;
     this.maxAttempts = opts.maxAttempts ?? 3;
   }
 
@@ -95,13 +98,17 @@ export class JobQueue {
       if (!candidate) return null;
 
       // Optimistic guard: only claim if the row is still exactly as observed.
+      // NOTE: attempts is NOT incremented here — a claim is a lease, not a
+      // conversion attempt. Counting claims would let crash/visibility-timeout
+      // reclaims (infra failures) burn the retry budget without a single
+      // conversion ever failing. The counter is bumped only on real failures in
+      // retryOrGiveUp().
       const res = await this.prisma.conversionJob.updateMany({
         where: { id: candidate.id, status: candidate.status, lockedAt: candidate.lockedAt },
         data: {
           status: "running",
           lockedAt: now,
           lockedBy: workerId,
-          attempts: { increment: 1 },
         },
       });
       if (res.count === 1) {
@@ -124,8 +131,10 @@ export class JobQueue {
   }
 
   /**
-   * Decide a failed attempt's fate. Re-queues until maxAttempts is reached;
-   * otherwise clears the lock so the caller can mark it permanently failed.
+   * Record a real conversion failure and decide its fate. Increments attempts
+   * (this is the only place attempts grows), re-queues until maxAttempts is
+   * reached, otherwise clears the lock so the caller can mark it permanently
+   * failed.
    */
   async retryOrGiveUp(jobId: string): Promise<{ willRetry: boolean }> {
     const job = (await this.prisma.conversionJob.findUnique({
@@ -133,16 +142,17 @@ export class JobQueue {
     })) as JobRow | null;
     if (!job) return { willRetry: false };
 
-    if (job.attempts < this.maxAttempts) {
+    const attempts = job.attempts + 1;
+    if (attempts < this.maxAttempts) {
       await this.prisma.conversionJob.update({
         where: { id: jobId },
-        data: { status: "queued", lockedAt: null, lockedBy: null },
+        data: { status: "queued", lockedAt: null, lockedBy: null, attempts },
       });
       return { willRetry: true };
     }
     await this.prisma.conversionJob.update({
       where: { id: jobId },
-      data: { lockedAt: null, lockedBy: null },
+      data: { lockedAt: null, lockedBy: null, attempts },
     });
     return { willRetry: false };
   }

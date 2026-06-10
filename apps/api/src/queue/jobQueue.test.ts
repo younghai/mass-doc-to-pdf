@@ -42,7 +42,7 @@ describe("JobQueue", () => {
     const claimed = await q.claimNext("worker-1");
     expect(claimed?.id).toBe(id);
     expect(claimed?.qualityMode).toBe("precise");
-    expect(claimed?.attempts).toBe(1);
+    expect(claimed?.attempts).toBe(0); // a claim is a lease, not a conversion attempt
 
     const row = await db.prisma.conversionJob.findUnique({ where: { id } });
     expect(row?.status).toBe("running");
@@ -78,12 +78,38 @@ describe("JobQueue", () => {
     const id = await seedJob("a.hwp");
     await q.enqueue(id);
 
-    await q.claimNext("w"); // attempts = 1
-    expect((await q.retryOrGiveUp(id)).willRetry).toBe(true);
+    await q.claimNext("w");
+    expect((await q.retryOrGiveUp(id)).willRetry).toBe(true); // attempts→1, requeued
     expect((await db.prisma.conversionJob.findUnique({ where: { id } }))?.status).toBe("queued");
 
-    await q.claimNext("w"); // attempts = 2
+    await q.claimNext("w");
+    expect((await q.retryOrGiveUp(id)).willRetry).toBe(false); // attempts→2, give up
+  });
+
+  it("crash reclaims do not burn retry budget — only real failures count", async () => {
+    const q = new JobQueue(db.prisma, { maxAttempts: 2, visibilityTimeoutMs: 1000 });
+    const id = await seedJob("a.hwp");
+    await q.enqueue(id);
+
+    // Two crash-reclaims (visibility timeout expiry) must not increment attempts.
+    await q.claimNext("worker-crashed-1");
+    await q.requeueStale(new Date(Date.now() + 5000));
+    await q.claimNext("worker-crashed-2");
+    await q.requeueStale(new Date(Date.now() + 5000));
+
+    const row = await db.prisma.conversionJob.findUnique({ where: { id } });
+    expect(row?.attempts).toBe(0);
+    expect(row?.status).toBe("queued");
+
+    // First real conversion failure → retry.
+    await q.claimNext("worker-real");
+    expect((await q.retryOrGiveUp(id)).willRetry).toBe(true);
+    expect((await db.prisma.conversionJob.findUnique({ where: { id } }))?.attempts).toBe(1);
+
+    // Second real failure at maxAttempts=2 → give up.
+    await q.claimNext("worker-real");
     expect((await q.retryOrGiveUp(id)).willRetry).toBe(false);
+    expect((await db.prisma.conversionJob.findUnique({ where: { id } }))?.attempts).toBe(2);
   });
 
   it("recovers crashed workers via requeueStale and stale claim", async () => {

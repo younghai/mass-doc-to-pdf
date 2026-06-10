@@ -1,11 +1,11 @@
 import { useState } from "react";
-import { useParams } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useNavigate, useParams } from "react-router-dom";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
 import { StatusPill } from "../components/StatusPill";
 import { humanSize, formatDate } from "../format";
 import type { QualityReport } from "@hwptopdf/shared";
-import { QUALITY_MODE_LABEL, QUALITY_STATUS_LABEL, gradeLabel, qualityAction, qualityStatus } from "../qualityView";
+import { QUALITY_MODE_LABEL, QUALITY_STATUS_LABEL, gradeLabel, qualityAction, qualityStatus, warningLabel } from "../qualityView";
 
 function QualityReportPanel({ report }: { readonly report: QualityReport }) {
   return (
@@ -42,7 +42,7 @@ function QualityReportPanel({ report }: { readonly report: QualityReport }) {
       {report.warnings.length ? (
         <ul className="quality-warnings">
           {report.warnings.map((warning) => (
-            <li key={warning}>{warning}</li>
+            <li key={warning}>{warningLabel(warning)}</li>
           ))}
         </ul>
       ) : null}
@@ -89,6 +89,9 @@ function PdfPreview({ jobId }: { readonly jobId: string }) {
 
 export function JobDetail() {
   const { id = "" } = useParams();
+  const navigate = useNavigate();
+  const qc = useQueryClient();
+
   const { data: job, isLoading } = useQuery({
     queryKey: ["job", id],
     queryFn: () => api.getJob(id),
@@ -100,6 +103,21 @@ export function JobDetail() {
     queryFn: () => api.getQualityReport(id),
     enabled: job?.status === "success",
     retry: false,
+  });
+
+  const retryMutation = useMutation({
+    mutationFn: () => api.retryJob(id),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["job", id] });
+      void qc.invalidateQueries({ queryKey: ["jobs"] });
+    },
+  });
+  const deleteMutation = useMutation({
+    mutationFn: () => api.deleteJob(id),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["jobs"] });
+      navigate("/service/jobs");
+    },
   });
 
   if (isLoading) return <p>로딩 중…</p>;
@@ -129,21 +147,54 @@ export function JobDetail() {
       </dl>
       {job.status === "success" ? (
         <>
-          <a className="btn" href={api.downloadUrl(job.id)}>
-            PDF 다운로드
-          </a>
+          <div className="job-actions">
+            <a className="btn" href={api.downloadUrl(job.id)}>
+              PDF 다운로드
+            </a>
+            <button
+              className="btn ghost"
+              type="button"
+              onClick={() => deleteMutation.mutate()}
+              disabled={deleteMutation.isPending}
+            >
+              삭제
+            </button>
+          </div>
           <PdfPreview jobId={job.id} />
           {qualityReport ? <QualityReportPanel report={qualityReport} /> : null}
         </>
-      ) : job.status === "running" || job.status === "pending" ? (
+      ) : job.status === "running" || job.status === "pending" || job.status === "queued" ? (
         <div className="notice" role="status">
           변환 작업이 진행 중입니다. 완료되면 이 화면에 다운로드 버튼이 표시됩니다.
         </div>
       ) : job.status === "failed" ? (
-        <div className="error" role="alert">
-          <strong>변환 실패</strong>
-          <p>{job.error}</p>
-        </div>
+        <>
+          <div className="error" role="alert">
+            <strong>변환 실패</strong>
+            <p>{job.error}</p>
+          </div>
+          <div className="job-actions">
+            <button
+              className="btn primary"
+              type="button"
+              onClick={() => retryMutation.mutate()}
+              disabled={retryMutation.isPending}
+            >
+              {retryMutation.isPending ? "재시도 중…" : "다시 변환"}
+            </button>
+            <button
+              className="btn ghost"
+              type="button"
+              onClick={() => deleteMutation.mutate()}
+              disabled={deleteMutation.isPending}
+            >
+              삭제
+            </button>
+          </div>
+          {retryMutation.isError ? (
+            <p className="error-msg" role="alert">재시도 실패: {String(retryMutation.error)}</p>
+          ) : null}
+        </>
       ) : null}
     </section>
   );

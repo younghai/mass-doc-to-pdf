@@ -135,10 +135,39 @@ async function finishConversion(
   }
 }
 
+const MAX_ACTIVE_JOBS_PER_USER = Number(process.env.MAX_ACTIVE_JOBS_PER_USER ?? 50);
+
 export function registerConvert(app: FastifyInstance, deps: AppDeps) {
+  app.post("/api/jobs/:id/retry", async (req, reply) => {
+    const user = await deps.getSessionUser(req);
+    if (!user) return reply.code(401).send({ error: "unauthenticated" });
+    const id = (req.params as { id: string }).id;
+    const raw = await deps.jobs.getRaw(user.id, id);
+    if (!raw) return reply.code(404).send({ error: "not found" });
+    if (raw.status !== "failed") return reply.code(409).send({ error: "only failed jobs can be retried" });
+
+    if (deps.queue) {
+      await deps.queue.enqueue(id);
+      return reply.code(202).send(await deps.jobs.get(user.id, id));
+    }
+
+    const data = Buffer.from(await deps.storage.get(raw.sourceKey));
+    const mode = parseQualityMode(raw.qualityMode ?? undefined);
+    const format = raw.format as DocFormat;
+    const engine = deps.registry.forFormat(format, { qualityMode: mode });
+    const running = await deps.jobs.markRunning(id, { engine: engine.name });
+    void finishConversion(deps, { jobId: id, userId: user.id, filename: raw.filename, format, mode, data, engine });
+    return reply.code(202).send(running);
+  });
+
   app.post("/api/convert", async (req, reply) => {
     const user = await deps.getSessionUser(req);
     if (!user) return reply.code(401).send({ error: "unauthenticated" });
+
+    const activeCount = await deps.jobs.countActive(user.id);
+    if (activeCount >= MAX_ACTIVE_JOBS_PER_USER) {
+      return reply.code(429).send({ error: "변환 대기 한도 초과. 완료된 작업을 확인 후 재시도하세요." });
+    }
 
     const qualityMode = parseQualityMode((req.query as { readonly qualityMode?: string }).qualityMode);
     const file = await req.file();

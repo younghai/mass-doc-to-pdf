@@ -4,13 +4,15 @@ import { devAuthPlugin } from "./auth/devPlugin.js";
 import { ensureDevAuthUser } from "./auth/devAuth.js";
 import { buildAuthConfig } from "./auth/authConfig.js";
 import { buildRegistry } from "./convert/registry.js";
+import { reportObjectKey } from "./convert/quality.js";
 import { JobService } from "./jobs/jobService.js";
 import { JobQueue } from "./queue/jobQueue.js";
 import { LocalFileStorage, S3Storage, makeS3Client, type Storage } from "./storage/s3.js";
 import { loadAppConfig } from "./config.js";
-import { prisma } from "./db.js";
+import { prisma, initSqlitePragmas } from "./db.js";
 
 const cfg = loadAppConfig(process.env);
+await initSqlitePragmas();
 
 const authConfig = buildAuthConfig({
   prisma,
@@ -29,13 +31,54 @@ const registry = buildRegistry(cfg.engines);
 // (worker-main) performs conversions. Default keeps the inline conversion path.
 const queue = process.env.USE_QUEUE === "1" ? new JobQueue(prisma) : undefined;
 
+// Inline mode has no worker to recover crashed conversions, so the API process
+// reaps jobs stranded in `running` past a generous deadline and marks them
+// failed (otherwise the UI polls a "변환 중" spinner forever). In queue mode the
+// worker's requeueStale owns recovery, so we don't double up here.
+if (!queue) {
+  const reapIntervalMs = Number(process.env.REAPER_INTERVAL_MS ?? 60_000);
+  const runningDeadlineMs = Number(process.env.RUNNING_DEADLINE_MS ?? 15 * 60_000);
+  setInterval(() => {
+    void jobs
+      .reapStaleRunning(new Date(Date.now() - runningDeadlineMs))
+      .then((n) => {
+        if (n > 0) console.warn(`reaped ${n} stuck running job(s)`);
+      })
+      .catch((err) => console.error("reaper failed:", err));
+  }, reapIntervalMs).unref();
+}
+
 const app = buildApp({
   registry,
   storage,
   jobs,
   queue,
+  webOrigin: cfg.webOrigin,
   getSessionUser: (req) => app.getSessionUser(req),
 });
+
+// Data retention sweep: delete jobs and their storage objects older than DATA_RETENTION_DAYS.
+const retentionDays = Number(process.env.DATA_RETENTION_DAYS ?? 30);
+const sweepIntervalMs = Number(process.env.RETENTION_SWEEP_INTERVAL_MS ?? 60 * 60_000);
+setInterval(async () => {
+  try {
+    const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60_000);
+    const expired = await prisma.conversionJob.findMany({
+      where: { createdAt: { lt: cutoff } },
+      select: { id: true, userId: true, sourceKey: true, outputKey: true },
+    });
+    for (const job of expired) {
+      const keys = [job.sourceKey, job.outputKey, reportObjectKey(job.userId, job.id)].filter(
+        (k): k is string => k != null,
+      );
+      await Promise.allSettled(keys.map((key) => storage.delete(key)));
+      await prisma.conversionJob.delete({ where: { id: job.id } });
+    }
+    if (expired.length > 0) console.info(`retention sweep: deleted ${expired.length} expired job(s)`);
+  } catch (err) {
+    console.error("retention sweep failed:", err);
+  }
+}, sweepIntervalMs).unref();
 
 if (cfg.auth.devAuth) {
   const devUser = await ensureDevAuthUser(prisma);

@@ -23,6 +23,9 @@ class MemoryStorage implements Storage {
     if (!v) throw Object.assign(new Error("not found"), { code: "ENOENT" });
     return v;
   }
+  async delete(key: string): Promise<void> {
+    this.map.delete(key);
+  }
 }
 
 const engine: Converter = { name: "rhwp", async convert() { return Buffer.from("%PDF-1.7"); } };
@@ -48,6 +51,7 @@ describe("POST /api/convert (durable queue path)", () => {
       storage,
       jobs,
       queue,
+      webOrigin: "http://localhost",
       getSessionUser: async () => ({ id: userId, email: "cq@x.c" }),
     };
     const app = buildApp(deps);

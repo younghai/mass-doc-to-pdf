@@ -1,10 +1,11 @@
-import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, normalize, relative, sep } from "node:path";
 
 export interface Storage {
   put(key: string, body: Buffer, contentType: string): Promise<void>;
   get(key: string): Promise<Uint8Array>;
+  delete(key: string): Promise<void>;
 }
 
 function safeObjectPath(root: string, key: string): string {
@@ -35,6 +36,12 @@ export class LocalFileStorage implements Storage {
   async get(key: string): Promise<Uint8Array> {
     return readFile(safeObjectPath(this.root, key));
   }
+
+  async delete(key: string): Promise<void> {
+    await unlink(safeObjectPath(this.root, key)).catch((err: NodeJS.ErrnoException) => {
+      if (err.code !== "ENOENT") throw err;
+    });
+  }
 }
 
 export class S3Storage implements Storage {
@@ -52,6 +59,10 @@ export class S3Storage implements Storage {
   async get(key: string): Promise<Uint8Array> {
     const res = await this.client.send(new GetObjectCommand({ Bucket: this.bucket, Key: key }));
     return (res.Body as { transformToByteArray(): Promise<Uint8Array> }).transformToByteArray();
+  }
+
+  async delete(key: string): Promise<void> {
+    await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: key }));
   }
 }
 

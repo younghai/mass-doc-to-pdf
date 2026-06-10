@@ -11,10 +11,19 @@ export const QUALITY_MODE_HELP: Record<ConversionMode, string> = {
 };
 
 export const QUALITY_STATUS_LABEL: Record<QualityStatus, string> = {
-  passed: "검수 낮음",
-  review: "저품질 의심",
-  failed: "실패",
+  passed: "검수 불필요",
+  review: "저품질 의심 — 검수 권장",
+  failed: "변환 실패",
 };
+
+const WARNING_LABEL: Record<string, string> = {
+  rhwp_small_pdf_review: "PDF 크기가 작습니다 — 원본 대조 검수 필요",
+  rhwp_low_bytes_per_page_review: "페이지당 PDF 용량이 낮습니다 — 이미지·표 유실 가능",
+};
+
+export function warningLabel(code: string): string {
+  return WARNING_LABEL[code] ?? code;
+}
 
 export function qualityStatus(report: QualityReport | null | undefined): QualityStatus {
   if (!report) return "review";

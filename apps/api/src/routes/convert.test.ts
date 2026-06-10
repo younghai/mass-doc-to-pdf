@@ -27,11 +27,13 @@ function makeApp(engine: Converter, authed = true) {
   const storage = {
     put,
     get,
+    delete: vi.fn(async () => {}),
   };
   const deps: AppDeps = {
     registry: { forFormat },
     storage,
     jobs: new JobService(db.prisma),
+    webOrigin: "http://localhost",
     getSessionUser: async () => (authed ? { id: userId, email: "u@x.c" } : null),
   };
   return { app: buildApp(deps), storage, forFormat };

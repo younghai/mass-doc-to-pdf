@@ -33,6 +33,7 @@ function makeApp() {
         ? new TextEncoder().encode(JSON.stringify(report))
         : new Uint8Array(pdf),
     ),
+    delete: vi.fn(async () => {}),
   };
   const pdfPreview = {
     renderFirstPagePng: vi.fn(async () => png),
@@ -42,6 +43,7 @@ function makeApp() {
     storage,
     jobs,
     pdfPreview,
+    webOrigin: "http://localhost",
     getSessionUser: async () => ({ id: userId, email: "u@x.c" }),
   };
   return { app: buildApp(deps), storage, pdfPreview };

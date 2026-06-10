@@ -44,6 +44,14 @@ export const api = {
     const r = await fetch(`/api/convert?${q.toString()}`, { method: "POST", body: fd });
     return asJson<JobDTO>(r);
   },
+  async retryJob(id: string): Promise<JobDTO> {
+    const r = await fetch(`/api/jobs/${id}/retry`, { method: "POST" });
+    return asJson<JobDTO>(r);
+  },
+  async deleteJob(id: string): Promise<void> {
+    const r = await fetch(`/api/jobs/${id}`, { method: "DELETE" });
+    if (!r.ok && r.status !== 404) throw new Error(`delete failed: ${r.status}`);
+  },
   downloadUrl: (id: string) => `/api/jobs/${id}/download`,
   previewUrl: (id: string) => `/api/jobs/${id}/preview`,
   previewImageUrl: (id: string) => `/api/jobs/${id}/preview.png`,

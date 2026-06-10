@@ -3,7 +3,7 @@ import { buildRegistry } from "../convert/registry.js";
 import { JobService } from "../jobs/jobService.js";
 import { LocalFileStorage, S3Storage, makeS3Client, type Storage } from "../storage/s3.js";
 import { loadAppConfig } from "../config.js";
-import { prisma } from "../db.js";
+import { prisma, initSqlitePragmas } from "../db.js";
 import { JobQueue } from "./jobQueue.js";
 import { runWorkerLoop } from "./worker.js";
 
@@ -32,6 +32,7 @@ for (const sig of ["SIGINT", "SIGTERM"] as const) {
   process.on(sig, () => resolveStop());
 }
 
+await initSqlitePragmas();
 console.log(`hwptopdf worker ${workerId} started`);
 runWorkerLoop(
   { registry, storage, jobs, queue },

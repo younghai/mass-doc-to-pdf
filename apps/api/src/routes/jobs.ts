@@ -126,6 +126,20 @@ export function registerJobs(app: FastifyInstance, deps: AppDeps) {
     }
   });
 
+  app.delete("/api/jobs/:id", async (req, reply) => {
+    const user = await auth(req, reply);
+    if (!user) return;
+    const id = (req.params as { id: string }).id;
+    const raw = await deps.jobs.getRaw(user.id, id);
+    if (!raw) return reply.code(404).send({ error: "not found" });
+    const keys = [raw.sourceKey, raw.outputKey, reportObjectKey(user.id, id)].filter(
+      (k): k is string => k != null,
+    );
+    await Promise.allSettled(keys.map((key) => deps.storage.delete(key)));
+    await deps.jobs.delete(user.id, id);
+    return reply.code(204).send();
+  });
+
   app.get("/api/jobs/:id/quality", async (req, reply) => {
     const user = await auth(req, reply);
     if (!user) return;

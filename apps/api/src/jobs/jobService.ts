@@ -59,7 +59,9 @@ export class JobService {
     return toDTO(
       await this.prisma.conversionJob.update({
         where: { id },
-        data: { status: "running", engine: p.engine, error: null },
+        // lockedAt doubles as a "running since" marker so the inline-mode reaper
+        // (reapStaleRunning) can detect conversions stranded by an API crash.
+        data: { status: "running", engine: p.engine, error: null, lockedAt: new Date() },
       }),
     );
   }
@@ -68,9 +70,48 @@ export class JobService {
     return toDTO(
       await this.prisma.conversionJob.update({
         where: { id },
-        data: { status: "failed", ...p },
+        data: { status: "failed", ...p, lockedAt: null, lockedBy: null },
       }),
     );
+  }
+
+  /**
+   * Inline-mode crash recovery: mark jobs stranded in `running` past a deadline
+   * as failed so they don't spin the UI forever. Keyed off lockedAt ("running
+   * since"), so a job that hasn't been marked running is never touched. Queue
+   * mode uses JobQueue.requeueStale instead and must not call this.
+   */
+  async reapStaleRunning(staleBefore: Date): Promise<number> {
+    const res = await this.prisma.conversionJob.updateMany({
+      where: { status: "running", lockedAt: { lt: staleBefore } },
+      data: {
+        status: "failed",
+        error: "변환이 완료되기 전에 처리 프로세스가 중단됐습니다. 다시 시도하세요.",
+        lockedAt: null,
+        lockedBy: null,
+      },
+    });
+    return res.count;
+  }
+
+  async countActive(userId: string): Promise<number> {
+    return this.prisma.conversionJob.count({
+      where: { userId, status: { in: ["pending", "queued", "running"] } },
+    });
+  }
+
+  async markPending(id: string) {
+    return toDTO(
+      await this.prisma.conversionJob.update({
+        where: { id },
+        data: { status: "pending", error: null, lockedAt: null, lockedBy: null },
+      }),
+    );
+  }
+
+  async delete(userId: string, id: string): Promise<boolean> {
+    const res = await this.prisma.conversionJob.deleteMany({ where: { id, userId } });
+    return res.count > 0;
   }
 
   async get(userId: string, id: string): Promise<JobDTO | null> {
