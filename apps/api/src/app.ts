@@ -1,5 +1,10 @@
-import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
+import Fastify, {
+  type FastifyInstance,
+  type FastifyRequest,
+  type FastifyServerOptions,
+} from "fastify";
 import multipart from "@fastify/multipart";
+import rateLimit from "@fastify/rate-limit";
 import { MAX_UPLOAD_BYTES } from "@hwptopdf/shared";
 import type { Registry } from "./convert/registry.js";
 import type { Storage } from "./storage/s3.js";
@@ -20,12 +25,27 @@ export interface AppDeps {
   pdfPreview?: PdfPreviewRenderer;
   /** Allowed browser origin for CSRF checks (e.g. "https://pdf.example.com"). */
   webOrigin: string;
+  /** Fastify logger option. server.ts enables pino in deployments; tests omit it. */
+  logger?: FastifyServerOptions["logger"];
+  /** Per-IP request ceiling per minute (default 300). */
+  rateLimitMax?: number;
   getSessionUser(req: FastifyRequest): Promise<SessionUser | null>;
 }
 
 export function buildApp(deps: AppDeps): FastifyInstance {
-  const app = Fastify({ logger: false });
+  const app = Fastify({
+    logger: deps.logger ?? false,
+    // nginx terminates TLS and forwards X-Forwarded-Proto/-For. Trusting it keeps
+    // req.protocol and req.ip correct for Auth.js callback URLs, Secure cookies,
+    // and per-IP rate limiting. Deployments never expose the API port directly.
+    trustProxy: true,
+  });
   app.register(multipart, { limits: { fileSize: MAX_UPLOAD_BYTES } });
+  app.register(rateLimit, {
+    max: deps.rateLimitMax ?? 300,
+    timeWindow: "1 minute",
+    allowList: (req) => req.url === "/health",
+  });
 
   // CSRF origin guard: reject state-changing browser requests from unexpected origins.
   app.addHook("onRequest", async (req, reply) => {
@@ -39,9 +59,13 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     }
   });
 
-  app.get("/health", async () => ({ status: "ok" }));
-  registerConvert(app, deps);
-  registerJobs(app, deps);
-  registerStats(app, deps);
+  // Fastify routes capture their hook chain at registration time, so routes must
+  // register after the rate-limit plugin boots or its onRequest hook is skipped.
+  app.after(() => {
+    app.get("/health", async () => ({ status: "ok" }));
+    registerConvert(app, deps);
+    registerJobs(app, deps);
+    registerStats(app, deps);
+  });
   return app;
 }

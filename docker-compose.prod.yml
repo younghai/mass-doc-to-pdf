@@ -62,6 +62,9 @@ services:
       ASPOSE_CLIENT_ID: ${ASPOSE_CLIENT_ID:-}
       ASPOSE_CLIENT_SECRET: ${ASPOSE_CLIENT_SECRET:-}
       USE_QUEUE: "1"
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      RATE_LIMIT_MAX: ${RATE_LIMIT_MAX:-300}
+      AUTH_RATE_LIMIT_MAX: ${AUTH_RATE_LIMIT_MAX:-60}
     volumes:
       - api-data:/data
     depends_on:

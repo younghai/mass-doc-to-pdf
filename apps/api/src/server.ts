@@ -54,6 +54,8 @@ const app = buildApp({
   jobs,
   queue,
   webOrigin: cfg.webOrigin,
+  logger: { level: process.env.LOG_LEVEL ?? "info" },
+  rateLimitMax: Number(process.env.RATE_LIMIT_MAX ?? 300),
   getSessionUser: (req) => app.getSessionUser(req),
 });
 
@@ -85,7 +87,10 @@ if (cfg.auth.devAuth) {
   await app.register(devAuthPlugin, { user: devUser });
 } else {
   // Mount Auth.js routes + the getSessionUser decorator onto the same instance.
-  await app.register(authPlugin, { config: authConfig });
+  await app.register(authPlugin, {
+    config: authConfig,
+    rateLimitMax: Number(process.env.AUTH_RATE_LIMIT_MAX ?? 60),
+  });
 }
 
 app
