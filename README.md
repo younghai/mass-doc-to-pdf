@@ -162,6 +162,17 @@ cp .env.example .env
 
 `.env`에서 `AUTH_SECRET`을 채웁니다.
 
+주요 환경 변수:
+
+| 변수 | 기본값 | 설명 |
+|---|---|---|
+| `AUTH_SECRET` | — | 필수. `openssl rand -base64 32` |
+| `WEB_ORIGIN` | `http://localhost:8081` | CSRF 허용 출처. 운영 시 실제 URL로 변경 필수 |
+| `USE_QUEUE=1` | — | 운영 시 필수. 없으면 인라인 변환 모드 |
+| `LOG_LEVEL` | `info` | `debug` / `info` / `warn` / `error` |
+| `RATE_LIMIT_MAX` | `300` | 분당 전체 요청 한도 |
+| `AUTH_RATE_LIMIT_MAX` | `60` | 분당 인증 엔드포인트 한도 |
+
 ```bash
 openssl rand -base64 32
 ```
@@ -282,6 +293,20 @@ RUN_E2E=1 pnpm test
 - 외부 사용자용 Google OAuth는 `DEV_AUTH=0`, DNS 도메인, HTTPS, Google Cloud Console redirect URI 등록이 필요합니다.
 - 대량 batch 운영 전에는 실제 HWP/HWPX 샘플 50개 또는 100개 이상으로 품질 코퍼스 리포트를 먼저 생성해야 합니다.
 - 운영 DB migration과 production DB 명령은 별도 승인과 rollback 계획 없이 자동 실행하지 않습니다.
+- `USE_QUEUE=1` 환경 변수가 없으면 인라인 모드(API 프로세스에서 즉시 변환)로 동작합니다. 운영 환경에서는 반드시 `USE_QUEUE=1`을 설정하고 worker 프로세스를 별도로 실행해야 합니다.
+- nginx 뒤에 배포할 때는 Fastify `trustProxy: true`가 기본 활성화돼 있습니다. `X-Forwarded-Proto`를 전달하지 않는 프록시 구성이라면 `TRUST_PROXY=0`으로 끄세요.
+
+## 2026-06-11 보안 및 안정성 강화
+
+운영 환경 배포를 위한 필수 항목 다섯 가지를 수정했습니다.
+
+| 항목 | 내용 |
+|---|---|
+| **durable queue** | `USE_QUEUE=1`이 모든 배포 설정(docker-compose, standalone env)에 누락돼 있었음. 전 파일 추가 |
+| **rate limiting** | `@fastify/rate-limit` — 전체 300/min, 인증 경로 60/min. `RATE_LIMIT_MAX` / `AUTH_RATE_LIMIT_MAX` 환경 변수로 조정 가능 |
+| **trustProxy** | nginx TLS termination 환경에서 OAuth 콜백, Secure 쿠키, IP 기반 rate limit가 올바르게 동작하도록 `trustProxy: true` 설정 |
+| **품질 게이트 수정** | 비활성화된 엔진(`RHWP_CLI_ENABLED=0` 등)이 "실패 시도"로 기록돼 모든 변환을 `review`로 강등하던 버그 수정. 비활성 엔진은 체인에서 완전 제외 |
+| **standalone 패키지** | `newsletter/`, `odysseus/` 로컬 워크스페이스가 tarball에 포함되던 문제 수정. 릴리스 재생성 후 전체 리허설 통과 확인 |
 
 ## 향후 고도화
 
