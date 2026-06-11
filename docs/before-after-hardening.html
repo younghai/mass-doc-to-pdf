@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>hwptopdf 하드닝 Before vs After (2026-06-10 → 06-11)</title>
+<style>
+  :root {
+    --bg: #f6f8fb; --card: #ffffff; --ink: #1a2233; --muted: #5b6b82;
+    --line: #e3e9f2; --blue: #2456d6; --red: #c2382f; --red-bg: #fdf2f1;
+    --green: #1d7a3e; --green-bg: #f0f9f2; --amber-bg: #fff8e8; --amber: #8a6116;
+    --code-bg: #10182a; --code-ink: #dce6f7;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg); color: var(--ink);
+    font-family: "Apple SD Gothic Neo", "Pretendard", -apple-system, "Segoe UI", sans-serif;
+    line-height: 1.6; padding: 40px 20px 80px;
+  }
+  .wrap { max-width: 1100px; margin: 0 auto; }
+  header h1 { font-size: 30px; letter-spacing: -0.5px; }
+  header .sub { color: var(--muted); margin-top: 6px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+  .meta .chip {
+    background: var(--card); border: 1px solid var(--line); border-radius: 999px;
+    padding: 6px 14px; font-size: 13px; color: var(--muted);
+  }
+  .meta .chip b { color: var(--ink); }
+  .callout {
+    margin-top: 26px; background: var(--amber-bg); border: 1px solid #f0dfae;
+    border-radius: 12px; padding: 18px 20px;
+  }
+  .callout h2 { font-size: 16px; color: var(--amber); margin-bottom: 6px; }
+  .callout p { font-size: 14.5px; }
+  section { margin-top: 44px; }
+  .sec-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 8px; }
+  .sec-head .no { color: var(--blue); font-weight: 800; font-size: 14px; }
+  .sec-head h2 { font-size: 20px; letter-spacing: -0.3px; }
+  .tag {
+    font-size: 11.5px; font-weight: 700; border-radius: 5px; padding: 2px 8px;
+    background: #e8eefc; color: var(--blue); vertical-align: 2px;
+  }
+  .sec-desc { color: var(--muted); font-size: 14px; margin-bottom: 14px; }
+  .ba { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 760px) { .ba { grid-template-columns: 1fr; } body { padding: 24px 12px 60px; } }
+  .col { background: var(--card); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .col .head {
+    padding: 9px 16px; font-size: 12.5px; font-weight: 800; letter-spacing: 0.4px;
+  }
+  .col.before .head { background: var(--red-bg); color: var(--red); border-bottom: 1px solid #f3d9d6; }
+  .col.after .head  { background: var(--green-bg); color: var(--green); border-bottom: 1px solid #d6ecdd; }
+  .col .body { padding: 14px 16px 16px; font-size: 14px; }
+  .col .body ul { padding-left: 18px; display: grid; gap: 6px; }
+  pre {
+    background: var(--code-bg); color: var(--code-ink); border-radius: 8px;
+    padding: 12px 14px; font-size: 12px; line-height: 1.55; overflow-x: auto;
+    margin-top: 10px; font-family: "SF Mono", ui-monospace, Menlo, monospace;
+  }
+  pre .del { color: #ff8d85; }
+  pre .add { color: #7ee2a1; }
+  pre .dim { color: #7d8db0; }
+  .files { margin-top: 10px; font-size: 12px; color: var(--muted); }
+  .files code { background: #eef2f9; border-radius: 4px; padding: 1px 6px; font-size: 11.5px; }
+  table { width: 100%; border-collapse: collapse; background: var(--card); border-radius: 12px; overflow: hidden; border: 1px solid var(--line); font-size: 13.5px; }
+  th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { background: #eef2f9; font-size: 12.5px; }
+  tr:last-child td { border-bottom: none; }
+  td.b { color: var(--red); }
+  td.a { color: var(--green); }
+  footer { margin-top: 50px; color: var(--muted); font-size: 12.5px; text-align: center; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>hwptopdf — 하드닝 Before vs After</h1>
+  <div class="sub">기준: 2026-06-10 이전 코드베이스 (마지막 커밋 <b>940035f</b>, 6/8) → 2026-06-11 하드닝 완료 (<b>e9455b2</b> + <b>53be5b9</b>)</div>
+  <div class="meta">
+    <span class="chip">변경 파일 <b>30개</b></span>
+    <span class="chip">추가 <b>+588</b> / 삭제 <b>−67</b> 라인</span>
+    <span class="chip">API 테스트 <b>92 → 94</b> (전부 통과)</span>
+    <span class="chip">웹 테스트 <b>21 통과</b></span>
+    <span class="chip">신규 운영 env <b>9개</b></span>
+    <span class="chip">처리 항목 <b>필수 8 + 권장 9 + 차단 3</b></span>
+  </div>
+</header>
+
+<div class="callout">
+  <h2>⚠ 데모 화면이 "거의 안 바뀐 것처럼" 보이는 이유</h2>
+  <p>이번 변경 20건 중 <b>16건이 서버·인프라·알고리즘 계층</b>(큐, 보안, 데이터 수명주기, 품질 판정)입니다.
+  화면에 보이는 4건(재시도·삭제 버튼, 진행 표시, 품질 라벨)은 <b>작업 데이터가 있어야</b> 나타납니다 —
+  빈 대시보드에서는 이전과 동일하게 보이는 것이 정상입니다. 실패한 작업을 하나 만들면 행마다 재시도/삭제 버튼이 바로 보입니다.</p>
+</div>
+
+<!-- 1 -->
+<section>
+  <div class="sec-head"><span class="no">01</span><h2>큐 아키텍처 — 죽어 있던 큐를 살림</h2> <span class="tag">BACKEND · INFRA</span></div>
+  <p class="sec-desc">가장 큰 구조 변화. 워커 프로세스와 큐 코드는 있었지만 배포 설정 어디에도 <code>USE_QUEUE=1</code>이 없어서 실제로는 한 번도 동작한 적이 없는 상태였습니다.</p>
+  <div class="ba">
+    <div class="col before"><div class="head">BEFORE — 6/10 이전</div><div class="body">
+      <ul>
+        <li>API가 항상 <b>인라인 fire-and-forget</b> 변환 — 응답 직후 백그라운드 Promise</li>
+        <li>standalone 워커는 <b>영원히 빈 큐만 폴링</b> (유령 프로세스)</li>
+        <li>API 재시작 시 진행 중이던 변환 <b>전부 유실</b></li>
+        <li>docker compose에 worker 서비스 자체가 없음</li>
+      </ul>
+    </div></div>
+    <div class="col after"><div class="head">AFTER — 6/11</div><div class="body">
+      <ul>
+        <li>compose 4개 + env.example 전부에 <code>USE_QUEUE=1</code> 명시</li>
+        <li><b>worker 서비스 신설</b> — API와 같은 이미지, <code>worker-main.js</code> 실행</li>
+        <li>visibility timeout(5분) + <code>requeueStale</code>로 워커 크래시 자동 복구</li>
+        <li>prod에서는 API healthy 이후에만 워커 기동</li>
+      </ul>
+      <pre><span class="add">+ worker:</span>
+<span class="add">+   command: ["node", "dist/queue/worker-main.js"]</span>
+<span class="add">+   environment:</span>
+<span class="add">+     USE_QUEUE: "1"</span>
+<span class="add">+     WORKER_VISIBILITY_TIMEOUT_MS: 300000</span></pre>
+    </div></div>
+  </div>
+  <div class="files">📁 <code>docker-compose.yml</code> <code>docker-compose.prod.yml</code> <code>standalone/env.example</code> 외 2</div>
+</section>
+
+<!-- 2 -->
+<section>
+  <div class="sec-head"><span class="no">02</span><h2>재시도 예산 알고리즘 — 클레임은 리스다</h2> <span class="tag">ALGORITHM</span></div>
+  <p class="sec-desc">워커가 작업을 잡을 때마다 <code>attempts</code>를 올리면, 크래시 후 재클레임도 "시도"로 계산됩니다. 워커가 3번 죽으면 변환을 한 번도 못 해보고 영구 실패하는 버그였습니다.</p>
+  <div class="ba">
+    <div class="col before"><div class="head">BEFORE</div><div class="body">
+      <pre><span class="dim">// claimNext()</span>
+data: {
+  status: "running",
+  <span class="del">attempts: { increment: 1 },  // 크래시 리클레임도 소진</span>
+  lockedAt: now, lockedBy: workerId,
+}</pre>
+      <ul><li>크래시 → 리클레임 = 재시도 예산 1 소모</li><li>최대 3회 크래시면 <b>변환 시도 0번으로 영구 실패</b></li></ul>
+    </div></div>
+    <div class="col after"><div class="head">AFTER</div><div class="body">
+      <pre><span class="dim">// claimNext() — 리스만 잡는다, attempts 불변</span>
+data: { status: "running", lockedAt: now, lockedBy: workerId }
+
+<span class="dim">// retryOrGiveUp() — 실패가 확정된 곳에서만</span>
+<span class="add">attempts: { increment: 1 }  // 실제 변환 실패만 계산</span></pre>
+      <ul><li>크래시·리클레임은 <b>무료</b> — 실패만 예산 소모</li><li>회귀 테스트 신규: "crash reclaims do not burn retry budget"</li></ul>
+    </div></div>
+  </div>
+  <div class="files">📁 <code>apps/api/src/queue/jobQueue.ts</code> <code>jobQueue.test.ts</code></div>
+</section>
+
+<!-- 3 -->
+<section>
+  <div class="sec-head"><span class="no">03</span><h2>SQLite 다중 프로세스 동시성</h2> <span class="tag">BACKEND</span></div>
+  <p class="sec-desc">큐가 살아나면 API와 워커 두 프로세스가 같은 DB 파일에 동시 기록합니다. 기본 저널 모드에서는 즉시 <code>SQLITE_BUSY</code>가 터집니다.</p>
+  <div class="ba">
+    <div class="col before"><div class="head">BEFORE</div><div class="body"><ul>
+      <li>기본 rollback journal — 쓰기 잠금 충돌 시 <b>즉시 에러</b></li>
+      <li>busy 대기 없음 → 간헐적 500</li>
+    </ul></div></div>
+    <div class="col after"><div class="head">AFTER</div><div class="body">
+      <pre><span class="add">PRAGMA journal_mode=WAL;</span>
+<span class="add">PRAGMA busy_timeout=5000;</span></pre>
+      <ul><li>읽기·쓰기 동시 진행 (WAL)</li><li>잠금 충돌 시 5초까지 대기 후 진행</li></ul>
+    </div></div>
+  </div>
+  <div class="files">📁 <code>apps/api/src/db.ts</code></div>
+</section>
+
+<!-- 4 -->
+<section>
+  <div class="sec-head"><span class="no">04</span><h2>무한 스피너 제거 — stuck-running 리퍼</h2> <span class="tag">BACKEND</span></div>
+  <div class="ba">
+    <div class="col before"><div class="head">BEFORE</div><div class="body"><ul>
+      <li>인라인 변환 중 프로세스가 죽으면 작업이 <b>영원히 running</b></li>
+      <li>UI는 "변환 중" 스피너를 <b>무한 폴링</b></li>
+    </ul></div></div>
+    <div class="col after"><div class="head">AFTER</div><div class="body"><ul>
+      <li>1분마다 스캔, 15분 넘게 running이면 실패 처리 (인라인 모드)</li>
+      <li>큐 모드는 워커의 <code>requeueStale</code>이 복구 담당 — 이중 처리 없음</li>
+    </ul></div></div>
+  </div>
+  <div class="files">📁 <code>apps/api/src/server.ts</code> <code>jobs/jobService.ts</code></div>
+</section>
+
+<!-- 5 -->
+<section>
+  <div class="sec-head"><span class="no">05</span><h2>보안 — CSRF Origin 검증</h2> <span class="tag">SECURITY</span></div>
+  <div class="ba">
+    <div class="col before"><div class="head">BEFORE</div><div class="body"><ul>
+      <li>Origin 검증 없음 — 악성 사이트가 로그인된 사용자의 브라우저로 <b>업로드·삭제 POST 위조 가능</b> (쿠키 자동 동봉)</li>
+    </ul></div></div>
+    <div class="col after"><div class="head">AFTER</div><div class="body">
+      <pre><span class="add">app.addHook("onRequest", (req, reply) => {</span>
+<span class="add">  // GET/HEAD/OPTIONS, /api/auth/* 제외</span>
+<span class="add">  if (origin && origin !== deps.webOrigin)</span>
+<span class="add">    return reply.code(403).send(...)</span>
+<span class="add">})</span></pre>
+      <ul><li>상태 변경 요청은 <code>WEB_ORIGIN</code> 일치 시에만 통과</li></ul>
+    </div></div>
+  </div>
+  <div class="files">📁 <code>apps/api/src/app.ts</code></div>
+</section>
+
+<!-- 6 -->
+<section>
+  <div class="sec-head"><span class="no">06</span><h2>보안 — 레이트리밋 (+ 훅 캡처 버그 발견)</h2> <span class="tag">SECURITY · 6/11 추가분</span></div>
+  <p class="sec-desc">구현 중 실제 버그를 하나 더 잡았습니다: Fastify는 <b>라우트 등록 시점의 훅 체인을 캡처</b>하므로, 플러그인 부팅 전에 등록된 라우트는 한도가 조용히 무시됩니다. 새 회귀 테스트가 이를 잡아냈고 <code>app.after()</code>로 등록 순서를 고쳤습니다.</p>
+  <div class="ba">
+    <div class="col before"><div class="head">BEFORE</div><div class="body"><ul>
+      <li>요청 횟수 제한 <b>전무</b> — 인증 브루트포스·업로드 폭주 무방비</li>
+      <li>동시 작업 수 제한도 없음 (한 명이 큐 독점 가능)</li>
+    </ul></div></div>
+    <div class="col after"><div class="head">AFTER</div><div class="body"><ul>
+      <li>전역 <b>300회/분/IP</b> (<code>RATE_LIMIT_MAX</code>)</li>
+      <li><code>/api/auth/*</code>는 <b>60회/분</b> (브루트포스 표면)</li>
+      <li><code>/health</code> 면제 — 컨테이너 헬스체크 보호</li>
+      <li>유저당 활성 작업 <b>50개 쿼터</b> → 초과 시 429</li>
+      <li>429 회귀 테스트 + 헬스 면제 테스트 신규</li>
+    </ul></div></div>
+  </div>
+  <div class="files">📁 <code>apps/api/src/app.ts</code> <code>auth/plugin.ts</code> <code>routes/convert.ts</code> <code>app.test.ts</code></div>
+</section>
+
+<!-- 7 -->
+<section>
+  <div class="sec-head"><span class="no">07</span><h2>보안 — 변환 샌드박스 격리</h2> <span class="tag">SECURITY · SIDECAR</span></div>
+  <p class="sec-desc">LibreOffice 사이드카는 신뢰할 수 없는 문서를 파싱하는 가장 위험한 표면입니다.</p>
+  <div class="ba">
+    <div class="col before"><div class="head">BEFORE</div><div class="body"><ul>
+      <li>컨테이너 <b>root로 실행</b> — 파서 취약점 = 컨테이너 장악</li>
+      <li>업로드 크기 무제한 — <b>zip-bomb</b>으로 메모리 고갈 가능</li>
+      <li>문서 내 <b>매크로 실행 가능</b> 상태</li>
+    </ul></div></div>
+    <div class="col after"><div class="head">AFTER</div><div class="body"><ul>
+      <li><code>USER nobody</code> — 권한 최소화</li>
+      <li><code>MAX_CONTENT_LENGTH = 128 MiB</code></li>
+      <li>매 변환 전 <code>MacroSecurityLevel=3</code>(최고) XCU 기록 + <code>--norestore</code></li>
+    </ul></div></div>
+  </div>
+  <div class="files">📁 <code>hwp-sidecar/Dockerfile</code> <code>hwp-sidecar/app.py</code></div>
+</section>
+
+<!-- 8 -->
+<section>
+  <div class="sec-head"><span class="no">08</span><h2>관측성 — 로그 0줄에서 구조화 로그로</h2> <span class="tag">BACKEND · 6/11 추가분</span></div>
+  <div class="ba">
+    <div class="col before"><div class="head">BEFORE</div><div class="body">
+      <pre>const app = Fastify({ <span class="del">logger: false</span> });</pre>
+      <ul><li>프로덕션에서 요청·에러 로그 <b>0줄</b> — 장애 원인 추적 불가</li></ul>
+    </div></div>
+    <div class="col after"><div class="head">AFTER</div><div class="body">
+      <pre>const app = Fastify({
+  <span class="add">logger: deps.logger ?? false,  // 서버는 pino, 테스트는 무음</span>
+  <span class="add">trustProxy: true,</span>
+});</pre>
+      <ul><li>pino 구조화 JSON 로그, <code>LOG_LEVEL</code>로 제어</li></ul>
+    </div></div>
+  </div>
+  <div class="files">📁 <code>apps/api/src/app.ts</code> <code>server.ts</code></div>
+</section>
+
+<!-- 9 -->
+<section>
+  <div class="sec-head"><span class="no">09</span><h2>프록시 신뢰 — OAuth·Secure 쿠키 정상화</h2> <span class="tag">BACKEND · 6/11 추가분</span></div>
+  <div class="ba">
+    <div class="col before"><div class="head">BEFORE</div><div class="body"><ul>
+      <li>nginx가 <code>X-Forwarded-Proto</code>를 보내도 Fastify가 무시</li>
+      <li><code>req.protocol</code>이 항상 <code>http</code> → HTTPS 운영에서 <b>OAuth 콜백 URL이 http://로 생성되어 로그인 실패</b></li>
+      <li>세션 쿠키에 Secure 플래그 누락</li>
+      <li>레이트리밋 IP가 프록시 IP로 뭉개짐</li>
+    </ul></div></div>
+    <div class="col after"><div class="head">AFTER</div><div class="body"><ul>
+      <li><code>trustProxy: true</code> — 프록시 헤더 신뢰</li>
+      <li>콜백 URL·Secure 쿠키·클라이언트 IP 모두 정확</li>
+      <li>배포 구성상 API 포트는 외부 미노출이라 스푸핑 위험 없음</li>
+    </ul></div></div>
+  </div>
+  <div class="files">📁 <code>apps/api/src/app.ts</code></div>
+</section>
+
+<!-- 10 -->
+<section>
+  <div class="sec-head"><span class="no">10</span><h2>데이터 수명주기 — 무한 축적에서 보존 정책으로</h2> <span class="tag">BACKEND · DATA</span></div>
+  <div class="ba">
+    <div class="col before"><div class="head">BEFORE</div><div class="body"><ul>
+      <li>업로드 원본·변환 PDF를 <b>지울 방법이 전혀 없음</b> (API도, 자동 정리도)</li>
+      <li>스토리지 무한 증가 + 개인정보 보존 정책 불가</li>
+      <li><code>Storage</code> 인터페이스에 delete 자체가 없었음</li>
+    </ul></div></div>
+    <div class="col after"><div class="head">AFTER</div><div class="body"><ul>
+      <li><code>DELETE /api/jobs/:id</code> — 원본·PDF·품질리포트 객체까지 삭제</li>
+      <li><code>Storage.delete</code> 신설 (Local unlink / S3 DeleteObject)</li>
+      <li><b>30일 TTL 스윕</b> — 1시간마다 만료 작업 자동 정리 (<code>DATA_RETENTION_DAYS</code>)</li>
+    </ul></div></div>
+  </div>
+  <div class="files">📁 <code>storage/s3.ts</code> <code>routes/jobs.ts</code> <code>server.ts</code> <code>jobs/jobService.ts</code></div>
+</section>
+
+<!-- 11 -->
+<section>
+  <div class="sec-head"><span class="no">11</span><h2>품질 게이트 알고리즘 — pdfPageCount</h2> <span class="tag">ALGORITHM</span></div>
+  <p class="sec-desc">PDF 1.5+는 XRef 스트림으로 오브젝트를 압축할 수 있어 <code>/Type /Page</code> 문자열이 본문에 보이지 않습니다. 기존 로직은 이런 정상 PDF를 "0페이지 = 저품질"로 오판했습니다.</p>
+  <div class="ba">
+    <div class="col before"><div class="head">BEFORE</div><div class="body">
+      <pre>count = matches(<span class="del">/\/Type\s*\/Page[^s]/g</span>)
+<span class="dim">// PDF 1.5+ 압축 스트림 → 0 매치 → 멀쩡한 PDF가 저품질 판정</span></pre>
+    </div></div>
+    <div class="col after"><div class="head">AFTER</div><div class="body">
+      <pre><span class="add">// 1순위: Pages 트리 /Count N의 최댓값 (루트 노드 총계)</span>
+<span class="add">max(/\/Count\s+(\d+)/g)</span>
+<span class="dim">// 폴백: 구형 PDF는 기존 /Type /Page 정규식</span></pre>
+    </div></div>
+  </div>
+  <div class="files">📁 <code>apps/api/src/convert/quality.ts</code></div>
+</section>
+
+<!-- 12 -->
+<section>
+  <div class="sec-head"><span class="no">12</span><h2>프런트엔드 UX — 실패가 막다른 길이 아니게</h2> <span class="tag">FRONTEND</span></div>
+  <p class="sec-desc">화면에서 보이는 변경은 이 섹션입니다 — 단, 작업 데이터가 있어야 나타납니다.</p>
+  <div class="ba">
+    <div class="col before"><div class="head">BEFORE</div><div class="body"><ul>
+      <li>실패한 작업 = <b>막다른 길</b> — 처음부터 재업로드뿐</li>
+      <li>작업 삭제 버튼 없음</li>
+      <li><code>queued</code> 상태가 진행 표시 없이 정체불명</li>
+      <li>품질 경고가 내부 코드 그대로 노출: <code>rhwp_small_pdf_review</code></li>
+      <li>상태 라벨 모호: "저품질 의심"</li>
+    </ul></div></div>
+    <div class="col after"><div class="head">AFTER</div><div class="body"><ul>
+      <li><b>재시도 버튼</b> — 목록 행 + 상세 페이지, 큐/인라인 모드 모두 (<code>POST /api/jobs/:id/retry</code>)</li>
+      <li><b>삭제 버튼</b> — 행·상세 양쪽, 스토리지 객체까지 정리</li>
+      <li><code>queued</code>도 "진행 중" 상태로 표시</li>
+      <li>경고 한글화: "PDF 크기가 작습니다 — 원본 대조 검수 필요"</li>
+      <li>라벨 명확화: "저품질 의심 — 검수 권장" / "검수 불필요"</li>
+    </ul></div></div>
+  </div>
+  <div class="files">📁 <code>apps/web/src/components/JobsTable.tsx</code> <code>pages/JobDetail.tsx</code> <code>qualityView.ts</code> <code>api/client.ts</code></div>
+</section>
+
+<!-- summary table -->
+<section>
+  <div class="sec-head"><span class="no">∑</span><h2>전체 요약표</h2></div>
+  <table>
+    <thead><tr><th style="width:24%">영역</th><th style="width:38%">Before (≤ 6/10)</th><th>After (6/11)</th></tr></thead>
+    <tbody>
+      <tr><td>큐</td><td class="b">코드만 존재, 배포에서 죽어 있음</td><td class="a">전 배포 구성에서 가동 + 크래시 복구</td></tr>
+      <tr><td>재시도 예산</td><td class="b">크래시도 시도로 소진</td><td class="a">실패만 소진 (리스 방식) + 테스트</td></tr>
+      <tr><td>DB 동시성</td><td class="b">SQLITE_BUSY 즉시 에러</td><td class="a">WAL + busy_timeout 5s</td></tr>
+      <tr><td>스턱 잡</td><td class="b">무한 "변환 중" 스피너</td><td class="a">15분 데드라인 리퍼</td></tr>
+      <tr><td>CSRF</td><td class="b">무방비</td><td class="a">Origin 검증 훅</td></tr>
+      <tr><td>레이트리밋</td><td class="b">없음</td><td class="a">300/분 + auth 60/분 + 쿼터 50</td></tr>
+      <tr><td>사이드카</td><td class="b">root · 무제한 · 매크로 허용</td><td class="a">nobody · 128MiB · 매크로 차단</td></tr>
+      <tr><td>로깅</td><td class="b">0줄 (logger:false)</td><td class="a">pino 구조화 로그</td></tr>
+      <tr><td>프록시/쿠키</td><td class="b">OAuth 콜백 http:// 깨짐</td><td class="a">trustProxy로 정상화</td></tr>
+      <tr><td>데이터 보존</td><td class="b">삭제 불가, 무한 축적</td><td class="a">삭제 API + 30일 TTL 스윕</td></tr>
+      <tr><td>페이지 카운트</td><td class="b">PDF 1.5+ 오판</td><td class="a">/Count 우선 + 폴백</td></tr>
+      <tr><td>UX</td><td class="b">실패 = 막다른 길, 코드 노출</td><td class="a">재시도·삭제·진행표시·한글 라벨</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<footer>hwptopdf · fix/critical-hardening 브랜치 · 커밋 e9455b2, 53be5b9 · 2026-06-11 생성</footer>
+
+</div>
+</body>
+</html>
