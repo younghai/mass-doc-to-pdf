@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { buildRegistry } from "../convert/registry.js";
+import { applyPreflight, logEnginePreflight, probeEngines } from "../convert/preflight.js";
 import { JobService } from "../jobs/jobService.js";
 import { LocalFileStorage, S3Storage, makeS3Client, type Storage } from "../storage/s3.js";
 import { loadAppConfig } from "../config.js";
@@ -16,7 +17,12 @@ const storage: Storage =
     ? new LocalFileStorage(cfg.storage.root)
     : new S3Storage(makeS3Client(cfg.s3), cfg.s3.bucket);
 const jobs = new JobService(prisma);
-const registry = buildRegistry(cfg.engines);
+// The worker is the real conversion executor, so it must exclude unavailable
+// local engines too — otherwise every HWP job records an rhwp/builtin failure
+// attempt and lands in `review` despite a successful H2Orestart render.
+const preflight = await probeEngines(cfg.engines);
+logEnginePreflight(preflight, cfg.engines);
+const registry = buildRegistry(applyPreflight(cfg.engines, preflight));
 const queue = new JobQueue(prisma, {
   // Keep in sync with JobQueue's default: the precise chain worst case
   // (rhwp-cli 180s + rhwp 120s + sidecar 150s + builtin 120s ≈ 9.5min) must

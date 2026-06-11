@@ -36,3 +36,32 @@ describe("per-IP rate limiting", () => {
     }
   });
 });
+
+describe("GET /health/engines", () => {
+  it("returns the injected preflight, live network probes, and chain names", async () => {
+    const deps: AppDeps = {
+      registry: { forFormat: () => engine },
+      storage: { put: vi.fn(), get: vi.fn(), delete: vi.fn() },
+      jobs: {} as JobService,
+      webOrigin: "http://localhost",
+      enginePreflight: {
+        rhwp: { available: false, reason: "ModuleNotFoundError: No module named 'rhwp'" },
+        rhwpCli: { available: false, reason: "binary not found: rhwp" },
+        builtin: { available: false, reason: "google chrome/chromium not found" },
+      },
+      // 127.0.0.1:1 refuses immediately (ECONNREFUSED), so the live probe
+      // resolves to unavailable fast without a real backend.
+      engineEndpoints: { hwpSidecarUrl: "http://127.0.0.1:1", gotenbergUrl: "http://127.0.0.1:1" },
+      getSessionUser: async () => null,
+    };
+    const app = buildApp(deps);
+    const res = await app.inject({ method: "GET", url: "/health/engines" });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.preflight.rhwp.available).toBe(false);
+    expect(body.live.sidecar.available).toBe(false);
+    expect(body.live.gotenberg.available).toBe(false);
+    expect(Array.isArray(body.chains.hwpPrecise)).toBe(true);
+    expect(body.chains.hwpPrecise).toEqual(["x"]);
+  });
+});

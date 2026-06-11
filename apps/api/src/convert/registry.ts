@@ -18,6 +18,10 @@ export interface EngineConfig {
   rhwpCli: RhwpCliConfig;
   hancom?: HancomConfig;
   aspose?: AsposeConfig;
+  // Set by the boot-time preflight; builtin needs python3 + headless chrome in
+  // the runtime image. Unspecified (=true) keeps existing tests and the inline
+  // path unaffected.
+  builtinAvailable?: boolean;
 }
 
 export interface Registry {
@@ -54,9 +58,11 @@ function officeConverter(cfg: EngineConfig, mode: ConversionMode): Converter {
       if (mode === "precise") {
         return new QualityFallbackConverter("office-quality-chain", "office", mode, [
           new H2OrestartConverter(cfg.hwpSidecarUrl, undefined, cfg.hwpSidecarTimeoutMs),
-          new BuiltinOfficeConverter(),
+          ...(cfg.builtinAvailable !== false ? [new BuiltinOfficeConverter()] : []),
         ]);
       }
+      // Operator explicitly chose builtin quick mode; honor it even when the
+      // preflight flagged it unavailable (logEnginePreflight emits an error).
       return new BuiltinOfficeConverter();
     case "gotenberg":
       return new GotenbergConverter(cfg.gotenbergUrl);
@@ -73,7 +79,7 @@ function officeConverter(cfg: EngineConfig, mode: ConversionMode): Converter {
 function hwpConverter(cfg: EngineConfig, mode: ConversionMode): Converter {
   if (mode === "quick") {
     return new QualityFallbackConverter("hwp-quick-chain", "hwp", mode, [
-      new BuiltinOfficeConverter(),
+      ...(cfg.builtinAvailable !== false ? [new BuiltinOfficeConverter()] : []),
       new H2OrestartConverter(cfg.hwpSidecarUrl, undefined, cfg.hwpSidecarTimeoutMs),
       ...(cfg.rhwp.enabled ? [new RhwpConverter(cfg.rhwp)] : []),
     ]);
@@ -83,6 +89,6 @@ function hwpConverter(cfg: EngineConfig, mode: ConversionMode): Converter {
     ...(cfg.rhwpCli.enabled ? [new RhwpCliConverter({ ...cfg.rhwpCli, mode: "pdf" })] : []),
     ...(cfg.rhwp.enabled ? [new RhwpConverter(cfg.rhwp)] : []),
     new H2OrestartConverter(cfg.hwpSidecarUrl, undefined, cfg.hwpSidecarTimeoutMs),
-    new BuiltinOfficeConverter(),
+    ...(cfg.builtinAvailable !== false ? [new BuiltinOfficeConverter()] : []),
   ]);
 }

@@ -75,6 +75,21 @@ describe("buildRegistry", () => {
       expect(noRhwp.engineNames()).toEqual(["h2orestart", "builtin-office"]);
     }
   });
+  it("excludes the builtin converter when the runtime preflight marks it unavailable", () => {
+    // base: rhwp enabled, rhwpCli disabled. With builtinAvailable=false the
+    // builtin-office engine drops out of both HWP chains, leaving rhwp/h2orestart.
+    const cfg = { ...base, builtinAvailable: false };
+    const precise = buildRegistry(cfg).forFormat("hwp");
+    const quick = buildRegistry(cfg).forFormat("hwp", { qualityMode: "quick" });
+    expect(precise).toBeInstanceOf(QualityFallbackConverter);
+    expect(quick).toBeInstanceOf(QualityFallbackConverter);
+    if (precise instanceof QualityFallbackConverter) {
+      expect(precise.engineNames()).toEqual(["rhwp", "h2orestart"]);
+    }
+    if (quick instanceof QualityFallbackConverter) {
+      expect(quick.engineNames()).toEqual(["h2orestart", "rhwp"]);
+    }
+  });
   it("can route office documents to the LibreOffice sidecar for standalone deployment", () => {
     const r = buildRegistry({ ...base, officeEngine: "hwp-sidecar" });
     expect(r.forFormat("office").name).toBe("h2orestart");

@@ -4,6 +4,7 @@ import { devAuthPlugin } from "./auth/devPlugin.js";
 import { ensureDevAuthUser } from "./auth/devAuth.js";
 import { buildAuthConfig } from "./auth/authConfig.js";
 import { buildRegistry } from "./convert/registry.js";
+import { applyPreflight, logEnginePreflight, probeEngines } from "./convert/preflight.js";
 import { reportObjectKey } from "./convert/quality.js";
 import { JobService } from "./jobs/jobService.js";
 import { JobQueue } from "./queue/jobQueue.js";
@@ -26,7 +27,12 @@ const storage: Storage =
     ? new LocalFileStorage(cfg.storage.root)
     : new S3Storage(makeS3Client(cfg.s3), cfg.s3.bucket);
 const jobs = new JobService(prisma);
-const registry = buildRegistry(cfg.engines);
+// Probe local runtime engines once at boot and drop the unavailable ones from
+// the conversion chains, so a missing python/rhwp/chrome can't strand every job
+// in `review` with a "disabled" failure attempt.
+const preflight = await probeEngines(cfg.engines);
+logEnginePreflight(preflight, cfg.engines);
+const registry = buildRegistry(applyPreflight(cfg.engines, preflight));
 // Opt-in durable queue: when enabled, the API enqueues and the worker process
 // (worker-main) performs conversions. Default keeps the inline conversion path.
 const queue = process.env.USE_QUEUE === "1" ? new JobQueue(prisma) : undefined;
@@ -56,6 +62,8 @@ const app = buildApp({
   webOrigin: cfg.webOrigin,
   logger: { level: process.env.LOG_LEVEL ?? "info" },
   rateLimitMax: Number(process.env.RATE_LIMIT_MAX ?? 300),
+  enginePreflight: preflight,
+  engineEndpoints: { hwpSidecarUrl: cfg.engines.hwpSidecarUrl, gotenbergUrl: cfg.engines.gotenbergUrl },
   getSessionUser: (req) => app.getSessionUser(req),
 });
 
