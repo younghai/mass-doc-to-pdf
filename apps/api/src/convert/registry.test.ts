@@ -35,7 +35,10 @@ describe("buildRegistry", () => {
     expect(r.forFormat("hwp", { qualityMode: "quick" }).name).toBe("hwp-quick-chain");
   });
   it("places the rhwp Rust CLI renderer before the Python rhwp worker in precise mode", () => {
-    const c = buildRegistry(base).forFormat("hwp");
+    const c = buildRegistry({
+      ...base,
+      rhwpCli: { ...base.rhwpCli, enabled: true },
+    }).forFormat("hwp");
     expect(c).toBeInstanceOf(QualityFallbackConverter);
     if (c instanceof QualityFallbackConverter) {
       expect(c.engineNames()).toEqual([
@@ -47,7 +50,10 @@ describe("buildRegistry", () => {
     }
   });
   it("adds the optional visual-preservation raster attempt after rhwp CLI PDF", () => {
-    const c = buildRegistry({ ...base, rhwpCli: { ...base.rhwpCli, mode: "raster" } }).forFormat("hwp");
+    const c = buildRegistry({
+      ...base,
+      rhwpCli: { ...base.rhwpCli, enabled: true, mode: "raster" },
+    }).forFormat("hwp");
     expect(c).toBeInstanceOf(QualityFallbackConverter);
     if (c instanceof QualityFallbackConverter) {
       expect(c.engineNames()).toEqual([
@@ -57,6 +63,22 @@ describe("buildRegistry", () => {
         "h2orestart",
         "builtin-office",
       ]);
+    }
+  });
+  it("excludes administratively disabled engines so they cannot poison quality status", () => {
+    // base has rhwpCli.enabled=false: no rhwp-cli attempt may appear in the chain,
+    // otherwise its "disabled" failure pushes every conversion to review.
+    const c = buildRegistry(base).forFormat("hwp");
+    expect(c).toBeInstanceOf(QualityFallbackConverter);
+    if (c instanceof QualityFallbackConverter) {
+      expect(c.engineNames()).toEqual(["rhwp", "h2orestart", "builtin-office"]);
+    }
+    const noRhwp = buildRegistry({
+      ...base,
+      rhwp: { ...base.rhwp, enabled: false },
+    }).forFormat("hwp");
+    if (noRhwp instanceof QualityFallbackConverter) {
+      expect(noRhwp.engineNames()).toEqual(["h2orestart", "builtin-office"]);
     }
   });
   it("can route office documents to the LibreOffice sidecar for standalone deployment", () => {

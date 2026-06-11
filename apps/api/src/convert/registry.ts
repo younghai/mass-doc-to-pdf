@@ -60,21 +60,25 @@ function officeConverter(cfg: EngineConfig, mode: ConversionMode): Converter {
   }
 }
 
+// Administratively disabled engines are excluded from the chain entirely: a
+// "disabled" failure attempt would push every conversion's quality status to
+// review, flooding operators with false positives on servers that simply
+// don't install the optional renderers.
 function hwpConverter(cfg: EngineConfig, mode: ConversionMode): Converter {
   if (mode === "quick") {
     return new QualityFallbackConverter("hwp-quick-chain", "hwp", mode, [
       new BuiltinOfficeConverter(),
       new H2OrestartConverter(cfg.hwpSidecarUrl),
-      new RhwpConverter(cfg.rhwp),
+      ...(cfg.rhwp.enabled ? [new RhwpConverter(cfg.rhwp)] : []),
     ]);
   }
   return new QualityFallbackConverter("hwp-quality-chain", "hwp", mode, [
     ...(cfg.hancom ? [new HancomConverter(cfg.hancom)] : []),
-    new RhwpCliConverter({ ...cfg.rhwpCli, mode: "pdf" }),
-    ...(cfg.rhwpCli.mode === "raster"
+    ...(cfg.rhwpCli.enabled ? [new RhwpCliConverter({ ...cfg.rhwpCli, mode: "pdf" })] : []),
+    ...(cfg.rhwpCli.enabled && cfg.rhwpCli.mode === "raster"
       ? [new RhwpCliConverter({ ...cfg.rhwpCli, mode: "raster" })]
       : []),
-    new RhwpConverter(cfg.rhwp),
+    ...(cfg.rhwp.enabled ? [new RhwpConverter(cfg.rhwp)] : []),
     new H2OrestartConverter(cfg.hwpSidecarUrl),
     new BuiltinOfficeConverter(),
   ]);
