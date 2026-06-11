@@ -17,3 +17,4 @@ standalone/release/
 apps/api/prisma/prisma/
 **/*.db
 newsletter/
+odysseus/

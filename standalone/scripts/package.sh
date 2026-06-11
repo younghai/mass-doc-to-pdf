@@ -27,6 +27,8 @@ COPYFILE_DISABLE=1 tar \
   --exclude ".omx" \
   --exclude "node_modules" \
   --exclude ".pnpm-store" \
+  --exclude "newsletter" \
+  --exclude "odysseus" \
   --exclude "apps/web/dist" \
   --exclude "apps/api/dist" \
   --exclude "packages/shared/dist" \
