@@ -16,7 +16,9 @@ apt-get install -y --no-install-recommends \
   sqlite3 \
   python3 \
   python3-venv \
+  python3-pip \
   python3-flask \
+  poppler-utils \
   default-jre \
   libreoffice \
   libreoffice-java-common \
@@ -47,5 +49,18 @@ if ! HOME=/tmp unopkg list --shared | grep -qi h2orestart; then
   exit 1
 fi
 rm -f /tmp/H2Orestart.oxt
+
+# rhwp precision engine: installed into a project venv so the system python
+# stays clean. Pinned for reproducible rendering quality. rhwp is an optional
+# engine, so a failed install only warns — the boot-time preflight excludes it
+# from the chain (check /health/engines after boot) and HWP conversion falls
+# back to LibreOffice/H2Orestart.
+RHWP_PYTHON_VERSION="${RHWP_PYTHON_VERSION:-0.7.0}"
+APP_DIR="${APP_DIR:-/opt/mass-doc-to-pdf}"
+mkdir -p "${APP_DIR}"
+python3 -m venv "${APP_DIR}/venv"
+if ! "${APP_DIR}/venv/bin/pip" install --no-cache-dir "rhwp-python==${RHWP_PYTHON_VERSION}"; then
+  echo "WARN: rhwp-python install failed — HWP conversion will fall back to LibreOffice/H2Orestart (check /health/engines after boot)." >&2
+fi
 
 echo "Standalone dependencies installed."
