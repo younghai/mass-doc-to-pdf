@@ -49,20 +49,14 @@ describe("buildRegistry", () => {
       ]);
     }
   });
-  it("adds the optional visual-preservation raster attempt after rhwp CLI PDF", () => {
+  it("never registers the unimplemented raster renderer even when requested", () => {
     const c = buildRegistry({
       ...base,
       rhwpCli: { ...base.rhwpCli, enabled: true, mode: "raster" },
     }).forFormat("hwp");
     expect(c).toBeInstanceOf(QualityFallbackConverter);
     if (c instanceof QualityFallbackConverter) {
-      expect(c.engineNames()).toEqual([
-        "rhwp-cli-pdf",
-        "rhwp-cli-raster",
-        "rhwp",
-        "h2orestart",
-        "builtin-office",
-      ]);
+      expect(c.engineNames()).toEqual(["rhwp-cli-pdf", "rhwp", "h2orestart", "builtin-office"]);
     }
   });
   it("excludes administratively disabled engines so they cannot poison quality status", () => {

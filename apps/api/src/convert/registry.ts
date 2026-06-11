@@ -64,6 +64,9 @@ function officeConverter(cfg: EngineConfig, mode: ConversionMode): Converter {
 // "disabled" failure attempt would push every conversion's quality status to
 // review, flooding operators with false positives on servers that simply
 // don't install the optional renderers.
+// Unimplemented engines are also never registered: the raster renderer is not
+// yet implemented, so it is excluded here regardless of configuration to
+// prevent a guaranteed-failure attempt from corrupting quality status.
 function hwpConverter(cfg: EngineConfig, mode: ConversionMode): Converter {
   if (mode === "quick") {
     return new QualityFallbackConverter("hwp-quick-chain", "hwp", mode, [
@@ -75,9 +78,6 @@ function hwpConverter(cfg: EngineConfig, mode: ConversionMode): Converter {
   return new QualityFallbackConverter("hwp-quality-chain", "hwp", mode, [
     ...(cfg.hancom ? [new HancomConverter(cfg.hancom)] : []),
     ...(cfg.rhwpCli.enabled ? [new RhwpCliConverter({ ...cfg.rhwpCli, mode: "pdf" })] : []),
-    ...(cfg.rhwpCli.enabled && cfg.rhwpCli.mode === "raster"
-      ? [new RhwpCliConverter({ ...cfg.rhwpCli, mode: "raster" })]
-      : []),
     ...(cfg.rhwp.enabled ? [new RhwpConverter(cfg.rhwp)] : []),
     new H2OrestartConverter(cfg.hwpSidecarUrl),
     new BuiltinOfficeConverter(),

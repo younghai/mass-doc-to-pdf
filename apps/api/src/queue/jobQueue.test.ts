@@ -5,10 +5,10 @@ import { JobQueue } from "./jobQueue.js";
 let db: ReturnType<typeof setupTestDb>;
 let userId: string;
 
-async function seedJob(filename: string, createdAt?: Date): Promise<string> {
+async function seedJob(filename: string, createdAt?: Date, ownerId?: string): Promise<string> {
   const job = await db.prisma.conversionJob.create({
     data: {
-      userId,
+      userId: ownerId ?? userId,
       filename,
       format: "hwp",
       extension: "hwp",
@@ -62,6 +62,32 @@ describe("JobQueue", () => {
     await q.enqueue(newer);
     expect((await q.claimNext("w"))?.id).toBe(older);
     expect((await q.claimNext("w"))?.id).toBe(newer);
+  });
+
+  it("round-robins queued jobs across users so a bulk batch cannot starve a single upload", async () => {
+    const q = new JobQueue(db.prisma);
+    const u2 = await db.prisma.user.create({ data: { email: "q2@x.c" } });
+
+    // u1 uploads a bulk batch of 3 (all older than u2's single upload).
+    const u1a = await seedJob("u1-a.hwp", new Date(2026, 0, 1));
+    const u1b = await seedJob("u1-b.hwp", new Date(2026, 0, 2));
+    const u1c = await seedJob("u1-c.hwp", new Date(2026, 0, 3));
+    // u2 uploads a single file last (newest createdAt of all four).
+    const u2a = await seedJob("u2-a.hwp", new Date(2026, 0, 4), u2.id);
+    for (const id of [u1a, u1b, u1c, u2a]) await q.enqueue(id);
+
+    const order = [
+      (await q.claimNext("w"))?.id,
+      (await q.claimNext("w"))?.id,
+      (await q.claimNext("w"))?.id,
+      (await q.claimNext("w"))?.id,
+    ];
+
+    // Round-robin: each user's 1st job (oldest user first) before any 2nd job,
+    // FIFO within a user. u2's single upload is served 2nd — under global FIFO
+    // (the old behaviour) it would have been dead last, behind the whole batch.
+    expect(order).toEqual([u1a, u2a, u1b, u1c]);
+    expect(order[1]).toBe(u2a); // not starved behind u1's bulk batch
   });
 
   it("does not double-claim the same job", async () => {

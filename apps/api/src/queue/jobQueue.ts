@@ -57,6 +57,8 @@ function toQueuedJob(row: JobRow): QueuedJob {
  *
  * Lifecycle: enqueue -> claimNext (atomic lock) -> release (success) | retryOrGiveUp (failure).
  * Crashed workers are recovered by requeueStale()/claimNext picking up expired locks.
+ * Fairness: claimNext round-robins queued jobs across users, so one user's bulk
+ * batch cannot starve another user's single upload (each user is served FIFO).
  */
 export class JobQueue {
   private readonly visibilityTimeoutMs: number;
@@ -82,19 +84,18 @@ export class JobQueue {
   }
 
   /**
-   * Atomically claim the oldest queued job (or a crashed running job whose lock
-   * has expired). Returns null when nothing is available.
+   * Atomically claim the next job to run. Crashed jobs (running with an expired
+   * lock) are recovered before fresh queued work; queued work is served fairly
+   * across users via round-robin. Returns null when nothing is available.
    */
   async claimNext(workerId: string, now: Date = new Date()): Promise<QueuedJob | null> {
     const staleBefore = new Date(now.getTime() - this.visibilityTimeoutMs);
 
     for (let guard = 0; guard < 25; guard++) {
-      const candidate = (await this.prisma.conversionJob.findFirst({
-        where: {
-          OR: [{ status: "queued" }, { status: "running", lockedAt: { lt: staleBefore } }],
-        },
-        orderBy: { createdAt: "asc" },
-      })) as JobRow | null;
+      const candidate = await this.nextCandidate(staleBefore);
+      // "retry": the chosen queued row changed status under us (raced) — there
+      // may be other claimable jobs, so loop again instead of giving up.
+      if (candidate === "retry") continue;
       if (!candidate) return null;
 
       // Optimistic guard: only claim if the row is still exactly as observed.
@@ -120,6 +121,64 @@ export class JobQueue {
       // Lost the race to another worker — try the next candidate.
     }
     return null;
+  }
+
+  /**
+   * Pick the next job to attempt to claim, in two phases:
+   *  1. Recover a crashed job first — a running row whose lock predates
+   *     `staleBefore`, oldest first. Reclaiming abandoned work ahead of fresh
+   *     queued jobs preserves the previous FIFO recovery behaviour.
+   *  2. Otherwise pick a queued job round-robin across users: every user's 1st
+   *     job (oldest user first) before any user's 2nd, and so on, keeping each
+   *     user FIFO internally. This stops one user's bulk batch from starving
+   *     another user's single upload.
+   *
+   * Returns the candidate row, "retry" when the chosen queued row raced out of
+   * "queued" before we could re-read it, or null when nothing is claimable.
+   */
+  private async nextCandidate(staleBefore: Date): Promise<JobRow | "retry" | null> {
+    const stale = (await this.prisma.conversionJob.findFirst({
+      where: { status: "running", lockedAt: { lt: staleBefore } },
+      orderBy: { createdAt: "asc" },
+    })) as JobRow | null;
+    if (stale) return stale;
+
+    // Round-robin queued jobs by interleaving each user's Nth-oldest job: every
+    // user's 1st job before any user's 2nd, etc. The ROW_NUMBER partition gives
+    // each job a per-user FIFO rank; ordering by that rank first interleaves
+    // users, and the createdAt tiebreak serves the longest-waiting user first.
+    //
+    // The rank is computed over each user's in-flight jobs ("queued" OR
+    // "running"), not "queued" alone, so it stays stable as jobs are claimed: a
+    // running job still holds its user's turn, so that user's next queued job
+    // ranks behind other users instead of being renumbered to rank 1 and
+    // jumping the line (which would collapse back to global FIFO). We then
+    // select only the queued rows from that ranking.
+    //
+    // No date is bound as a parameter — we only ORDER BY createdAt, so this
+    // never depends on how Prisma serialises a SQLite DateTime, only on its
+    // stored ordering (works on SQLite and Postgres).
+    const rows = await this.prisma.$queryRaw<Array<{ id: string }>>`
+      SELECT "id" FROM (
+        SELECT "id", "status",
+               ROW_NUMBER() OVER (PARTITION BY "userId" ORDER BY "createdAt", "id") AS rn,
+               "createdAt"
+        FROM "ConversionJob"
+        WHERE "status" IN ('queued', 'running')
+      ) ranked
+      WHERE "status" = 'queued'
+      ORDER BY rn, "createdAt", "id"
+      LIMIT 1`;
+    if (rows.length === 0) return null;
+
+    // The raw query only returns an id; re-read the full row. If it is no longer
+    // queued, another worker claimed it between the SELECT and now — signal a
+    // retry so the optimistic guard never claims a row on a stale status.
+    const candidate = (await this.prisma.conversionJob.findUnique({
+      where: { id: rows[0].id },
+    })) as JobRow | null;
+    if (!candidate || candidate.status !== "queued") return "retry";
+    return candidate;
   }
 
   /** Clear the lock after a successful conversion (status is set via JobService.markSuccess). */

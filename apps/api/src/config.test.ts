@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { loadEngineConfig, loadAppConfig } from "./config.js";
 
 describe("loadEngineConfig", () => {
@@ -25,15 +25,22 @@ describe("loadEngineConfig", () => {
       RHWP_CLI_PATH: "/opt/rhwp/bin/rhwp",
       RHWP_CLI_TIMEOUT_MS: "180000",
       RHWP_FONT_PATHS: "/opt/fonts/hwp:/opt/fonts/nanum",
-      RHWP_CLI_VISUAL_MODE: "raster",
     });
     expect(cfg.rhwpCli).toEqual({
       enabled: true,
       cliPath: "/opt/rhwp/bin/rhwp",
       timeoutMs: 180_000,
       fontPaths: ["/opt/fonts/hwp", "/opt/fonts/nanum"],
-      mode: "raster",
+      mode: "pdf",
     });
+  });
+
+  it("falls back to pdf and emits a warning when RHWP_CLI_VISUAL_MODE=raster is requested", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const cfg = loadEngineConfig({ RHWP_CLI_VISUAL_MODE: "raster" });
+    expect(cfg.rhwpCli.mode).toBe("pdf");
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("raster"));
+    warn.mockRestore();
   });
 
   it("reads rhwp worker config", () => {

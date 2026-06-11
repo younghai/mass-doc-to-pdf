@@ -20,6 +20,27 @@ class StaticConverter implements Converter {
   }
 }
 
+class CountingConverter implements Converter {
+  calls = 0;
+  constructor(
+    readonly name: string,
+    private readonly pdf: Buffer,
+  ) {}
+
+  async convert(_input: ConvertInput): Promise<Buffer> {
+    this.calls += 1;
+    return this.pdf;
+  }
+}
+
+class FailingConverter implements Converter {
+  constructor(readonly name: string) {}
+
+  async convert(): Promise<Buffer> {
+    throw new Error("engine unavailable");
+  }
+}
+
 describe("QualityFallbackConverter", () => {
   it("keeps trying precise engines when the first success needs review", async () => {
     const converter = new QualityFallbackConverter("hwp-quality-chain", "hwp", "precise", [
@@ -54,5 +75,61 @@ describe("QualityFallbackConverter", () => {
 
     expect(result.report?.selectedEngine).toBe("rhwp-cli-pdf");
     expect(result.report?.status).toBe("review");
+  });
+
+  it("stops the chain once a failed attempt makes passed unreachable", async () => {
+    const builtin = new CountingConverter("builtin-office", PASSED_PDF);
+    const converter = new QualityFallbackConverter("hwp-quality-chain", "hwp", "precise", [
+      new FailingConverter("rhwp"),
+      new StaticConverter("h2orestart", PASSED_PDF),
+      builtin,
+    ]);
+
+    const result = await converter.convertWithReport({
+      filename: "form.hwp",
+      data: Buffer.alloc(500_000),
+    });
+
+    expect(result.report?.selectedEngine).toBe("h2orestart");
+    expect(result.report?.status).toBe("review");
+    expect(builtin.calls).toBe(0);
+    expect(result.report?.attempts).toEqual([
+      expect.objectContaining({ engine: "rhwp", status: "failed" }),
+      expect.objectContaining({ engine: "h2orestart", status: "success" }),
+    ]);
+  });
+
+  it("returns early when only fallback-grade engines remain", async () => {
+    const builtin = new CountingConverter("builtin-office", PASSED_PDF);
+    const converter = new QualityFallbackConverter("hwp-quality-chain", "hwp", "precise", [
+      new StaticConverter("rhwp", REVIEW_PDF),
+      builtin,
+    ]);
+
+    const result = await converter.convertWithReport({
+      filename: "form.hwp",
+      data: Buffer.alloc(500_000),
+    });
+
+    expect(result.report?.selectedEngine).toBe("rhwp");
+    expect(result.report?.status).toBe("review");
+    expect(builtin.calls).toBe(0);
+  });
+
+  it("keeps trying while an acceptable-grade engine could still pass", async () => {
+    const h2orestart = new CountingConverter("h2orestart", PASSED_PDF);
+    const converter = new QualityFallbackConverter("hwp-quality-chain", "hwp", "precise", [
+      new StaticConverter("rhwp", REVIEW_PDF),
+      h2orestart,
+    ]);
+
+    const result = await converter.convertWithReport({
+      filename: "form.hwp",
+      data: Buffer.alloc(500_000),
+    });
+
+    expect(result.report?.selectedEngine).toBe("h2orestart");
+    expect(result.report?.status).toBe("passed");
+    expect(h2orestart.calls).toBe(1);
   });
 });

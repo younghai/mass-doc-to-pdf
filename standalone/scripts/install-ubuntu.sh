@@ -35,9 +35,17 @@ fi
 
 corepack enable
 
+H2ORESTART_VERSION="${H2ORESTART_VERSION:-v0.7.12}"
 curl -fsSL -o /tmp/H2Orestart.oxt \
-  https://github.com/ebandal/H2Orestart/releases/latest/download/H2Orestart.oxt
+  "https://github.com/ebandal/H2Orestart/releases/download/${H2ORESTART_VERSION}/H2Orestart.oxt"
+# || true preserves idempotency: re-running when the extension is already deployed
+# returns a non-zero exit from unopkg, which is harmless.
 HOME=/tmp unopkg add --shared /tmp/H2Orestart.oxt || true
+if ! HOME=/tmp unopkg list --shared | grep -qi h2orestart; then
+  echo "ERROR: H2Orestart extension is not installed — HWP conversion via LibreOffice will fail." >&2
+  echo "       Re-run: HOME=/tmp unopkg add --shared /tmp/H2Orestart.oxt" >&2
+  exit 1
+fi
 rm -f /tmp/H2Orestart.oxt
 
 echo "Standalone dependencies installed."

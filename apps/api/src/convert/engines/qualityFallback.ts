@@ -7,7 +7,7 @@ import {
   type Converter,
   type ReportingConverter,
 } from "../types.js";
-import { buildQualityReport } from "../quality.js";
+import { buildQualityReport, gradeForEngine } from "../quality.js";
 
 function errorMessage(err: unknown): string {
   if (err instanceof Error) return err.message;
@@ -35,7 +35,8 @@ export class QualityFallbackConverter implements ReportingConverter {
     const warnings: string[] = [];
     let reviewResult: ConversionResult | undefined;
 
-    for (const engine of this.engines) {
+    for (let i = 0; i < this.engines.length; i++) {
+      const engine = this.engines[i];
       const started = Date.now();
       try {
         const result = isReportingConverter(engine)
@@ -61,6 +62,11 @@ export class QualityFallbackConverter implements ReportingConverter {
         };
         if (this.mode === "precise" && report.status === "review") {
           reviewResult ??= conversionResult;
+          // A failed attempt stays in `attempts` forever, so statusFor can never
+          // return "passed" for any later engine. Likewise fallback-grade engines
+          // map to "review" at best. When neither path to "passed" exists, the
+          // remaining engines are pure latency — return the review PDF we have.
+          if (!this.couldStillPass(i + 1, attempts)) return reviewResult;
           continue;
         }
         return conversionResult;
@@ -73,5 +79,13 @@ export class QualityFallbackConverter implements ReportingConverter {
 
     if (reviewResult) return reviewResult;
     throw new ConversionError(this.name, `all converters failed: ${warnings.join(" | ")}`);
+  }
+
+  private couldStillPass(nextIndex: number, attempts: readonly QualityAttempt[]): boolean {
+    if (attempts.some((attempt) => attempt.status === "failed")) return false;
+    return this.engines.slice(nextIndex).some((engine) => {
+      const grade = gradeForEngine(engine.name);
+      return grade === "good" || grade === "acceptable";
+    });
   }
 }

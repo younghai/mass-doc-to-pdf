@@ -1,6 +1,13 @@
 import type { EngineConfig } from "./convert/registry.js";
 import { checkGoogleOAuthReadiness } from "./auth/oauthReadiness.js";
 
+function rhwpCliMode(env: NodeJS.ProcessEnv): "pdf" {
+  if (env.RHWP_CLI_VISUAL_MODE === "raster") {
+    console.warn("RHWP_CLI_VISUAL_MODE=raster is not implemented; falling back to pdf export");
+  }
+  return "pdf";
+}
+
 function officeEngine(env: NodeJS.ProcessEnv): EngineConfig["officeEngine"] {
   switch (env.OFFICE_ENGINE) {
     case "hwp-sidecar":
@@ -31,7 +38,7 @@ export function loadEngineConfig(env: NodeJS.ProcessEnv): EngineConfig {
         .split(":")
         .map((value) => value.trim())
         .filter((value) => value.length > 0),
-      mode: env.RHWP_CLI_VISUAL_MODE === "raster" ? "raster" : "pdf",
+      mode: rhwpCliMode(env),
     },
   };
 
