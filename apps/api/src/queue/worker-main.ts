@@ -18,7 +18,11 @@ const storage: Storage =
 const jobs = new JobService(prisma);
 const registry = buildRegistry(cfg.engines);
 const queue = new JobQueue(prisma, {
-  visibilityTimeoutMs: Number(process.env.WORKER_VISIBILITY_TIMEOUT_MS ?? 5 * 60_000),
+  // Keep in sync with JobQueue's default: the precise chain worst case
+  // (rhwp-cli 180s + rhwp 120s + sidecar 150s + builtin 120s ≈ 9.5min) must
+  // stay below this lease, or a slow-but-alive conversion gets reclaimed and
+  // double-processed by another worker.
+  visibilityTimeoutMs: Number(process.env.WORKER_VISIBILITY_TIMEOUT_MS ?? 15 * 60_000),
   maxAttempts: Number(process.env.WORKER_MAX_ATTEMPTS ?? 3),
 });
 

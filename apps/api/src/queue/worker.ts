@@ -37,6 +37,8 @@ export interface WorkerLoopOptions {
   readonly workerId: string;
   readonly idlePollMs?: number;
   readonly staleSweepMs?: number;
+  /** Backoff after an unexpected iteration error (DB/storage outage). */
+  readonly errorBackoffMs?: number;
   /** Stop signal — when it resolves, the loop exits after the current job. */
   readonly stop?: Promise<void>;
 }
@@ -48,6 +50,7 @@ export interface WorkerLoopOptions {
 export async function runWorkerLoop(deps: WorkerRuntimeDeps, opts: WorkerLoopOptions): Promise<void> {
   const idlePollMs = opts.idlePollMs ?? 1000;
   const staleSweepMs = opts.staleSweepMs ?? 60_000;
+  const errorBackoffMs = opts.errorBackoffMs ?? 5_000;
   let stopped = false;
   void opts.stop?.then(() => {
     stopped = true;
@@ -57,12 +60,20 @@ export async function runWorkerLoop(deps: WorkerRuntimeDeps, opts: WorkerLoopOpt
   const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
   while (!stopped) {
-    const nowMs = Date.now();
-    if (nowMs - lastSweep > staleSweepMs) {
-      await deps.queue.requeueStale();
-      lastSweep = nowMs;
+    try {
+      const nowMs = Date.now();
+      if (nowMs - lastSweep > staleSweepMs) {
+        await deps.queue.requeueStale();
+        lastSweep = nowMs;
+      }
+      const didWork = await runWorkerOnce(deps, opts.workerId);
+      if (!didWork) await wait(idlePollMs);
+    } catch (err) {
+      // A single poisoned job or a transient DB/storage outage must not kill
+      // the worker: exiting puts systemd/compose into a claim -> crash ->
+      // restart loop on the same job. Log, back off, keep serving the queue.
+      console.error(`worker ${opts.workerId} iteration failed:`, err);
+      await wait(errorBackoffMs);
     }
-    const didWork = await runWorkerOnce(deps, opts.workerId);
-    if (!didWork) await wait(idlePollMs);
   }
 }

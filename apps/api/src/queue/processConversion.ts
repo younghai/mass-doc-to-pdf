@@ -25,12 +25,18 @@ function errorMessage(err: unknown): string {
  * persist the PDF + quality report, and mark success. On failure it returns the
  * error (the worker decides retry vs. permanent failure). This is durable —
  * everything it needs is in storage + the DB, not the original HTTP request.
+ *
+ * Contract: this function never throws on any input or infrastructure error
+ * (e.g. a missing source object or a transient storage outage) — it always
+ * resolves to a ProcessResult, because the worker loop's survival depends on it.
  */
 export async function processConversion(deps: WorkerDeps, job: QueuedJob): Promise<ProcessResult> {
-  const data = Buffer.from(await deps.storage.get(job.sourceKey));
-  const engine = deps.registry.forFormat(job.format, { qualityMode: job.qualityMode });
+  let engineName = "unknown";
   const started = Date.now();
   try {
+    const data = Buffer.from(await deps.storage.get(job.sourceKey));
+    const engine = deps.registry.forFormat(job.format, { qualityMode: job.qualityMode });
+    engineName = engine.name;
     const result: ConversionResult = isReportingConverter(engine)
       ? await engine.convertWithReport({ filename: job.filename, data })
       : { pdf: await engine.convert({ filename: job.filename, data }) };
@@ -64,7 +70,7 @@ export async function processConversion(deps: WorkerDeps, job: QueuedJob): Promi
   } catch (err) {
     return {
       ok: false,
-      engine: engine.name,
+      engine: engineName,
       durationMs: Date.now() - started,
       error: errorMessage(err),
     };

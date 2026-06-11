@@ -2,7 +2,9 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
 import { setupTestDb } from "../test/testDb.js";
 import { JobService } from "../jobs/jobService.js";
 import { JobQueue } from "./jobQueue.js";
-import { runWorkerOnce, type WorkerRuntimeDeps } from "./worker.js";
+import { processConversion } from "./processConversion.js";
+import { runWorkerLoop, runWorkerOnce, type WorkerRuntimeDeps } from "./worker.js";
+import type { QueuedJob } from "./jobQueue.js";
 import type { Storage } from "../storage/s3.js";
 import type { Converter } from "../convert/types.js";
 import type { Registry } from "../convert/registry.js";
@@ -106,5 +108,67 @@ describe("runWorkerOnce", () => {
     const job = await jobs.get(userId, id);
     expect(job?.status).toBe("failed");
     expect(job?.error).toMatch(/boom/);
+  });
+});
+
+describe("processConversion", () => {
+  it("returns a failure result instead of throwing when the source object is missing", async () => {
+    const storage: Storage = {
+      async get() {
+        throw Object.assign(new Error("NoSuchKey"), { code: "NoSuchKey" });
+      },
+      async put() {},
+      async delete() {},
+    };
+    const engine: Converter = { name: "rhwp", async convert() { return Buffer.from("%PDF-1.7"); } };
+    const job: QueuedJob = {
+      id: "j1",
+      userId,
+      filename: "a.hwp",
+      format: "hwp",
+      extension: "hwp",
+      mimeType: "application/x-hwp",
+      sizeBytes: 9,
+      sourceKey: `${userId}/src/missing.hwp`,
+      qualityMode: "precise",
+      attempts: 0,
+    };
+
+    const result = await processConversion({ registry: registryWith(engine), storage, jobs }, job);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toMatch(/NoSuchKey/);
+    }
+  });
+});
+
+describe("runWorkerLoop", () => {
+  it("survives an unexpected iteration error and keeps polling", async () => {
+    let claimCalls = 0;
+    // Iteration 1 throws (transient DB/storage outage); later iterations return
+    // null so the loop idles. A crash here would mimic the systemd/compose
+    // claim -> crash -> restart loop the catch is meant to prevent.
+    const queue = {
+      async claimNext() {
+        claimCalls += 1;
+        if (claimCalls === 1) throw new Error("transient db outage");
+        return null;
+      },
+      async requeueStale() { return 0; },
+    } as unknown as JobQueue;
+    const engine: Converter = { name: "x", async convert() { return Buffer.from(""); } };
+    const deps: WorkerRuntimeDeps = { registry: registryWith(engine), storage: new MemoryStorage(), jobs, queue };
+
+    let resolveStop: () => void = () => {};
+    const stop = new Promise<void>((resolve) => { resolveStop = resolve; });
+
+    const loop = runWorkerLoop(deps, { workerId: "w-loop", errorBackoffMs: 1, idlePollMs: 1, stop });
+
+    // Give the loop a few iterations past the initial throw, then ask it to stop.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    resolveStop();
+
+    await expect(loop).resolves.toBeUndefined();
+    expect(claimCalls).toBeGreaterThanOrEqual(2);
   });
 });
