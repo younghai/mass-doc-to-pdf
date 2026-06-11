@@ -381,6 +381,10 @@ export class H2OrestartConverter implements Converter {
   constructor(
     private readonly baseUrl: string,
     private readonly fetchFn: FetchFn = fetch,
+    // Slightly above the sidecar's internal soffice timeout (120s) so the
+    // sidecar's own 422 wins over a client-side abort, and a hung sidecar
+    // (network black hole) cannot stall the worker for undici's ~10min default.
+    private readonly timeoutMs = 150_000,
   ) {}
 
   async convert({ filename, data }: ConvertInput): Promise<Buffer> {
@@ -389,8 +393,19 @@ export class H2OrestartConverter implements Converter {
     const url = `${this.baseUrl}/convert`;
     let res: Response;
     try {
-      res = await this.fetchFn(url, { method: "POST", body: form });
+      res = await this.fetchFn(url, {
+        method: "POST",
+        body: form,
+        signal: AbortSignal.timeout(this.timeoutMs),
+      });
     } catch (cause) {
+      if (cause instanceof Error && cause.name === "TimeoutError") {
+        throw new ConversionError(
+          this.name,
+          `request to ${url} timed out after ${this.timeoutMs}ms`,
+          cause,
+        );
+      }
       throw new ConversionError(this.name, `request to ${url} failed`, cause);
     }
     if (!res.ok) {
@@ -405,6 +420,9 @@ export class H2OrestartConverter implements Converter {
 
 export class BuiltinOfficeConverter implements Converter {
   readonly name = "builtin-office";
+  // Chrome headless inside the script is the hang risk; SIGKILL because a hung
+  // Chrome can ignore the default SIGTERM and leave the worker stuck forever.
+  constructor(private readonly timeoutMs = Number(process.env.BUILTIN_TIMEOUT_MS ?? 120_000)) {}
 
   async convert(input: ConvertInput): Promise<Buffer> {
     const dir = await mkdtemp(join(tmpdir(), "hwptopdf-office-"));
@@ -415,6 +433,8 @@ export class BuiltinOfficeConverter implements Converter {
       await writeFile(inputPath, input.data);
       await execFileAsync("python3", ["-c", BUILTIN_OFFICE_SCRIPT, inputPath, outputPath], {
         maxBuffer: 8 * 1024 * 1024,
+        timeout: this.timeoutMs,
+        killSignal: "SIGKILL",
       });
       return Buffer.from(await readFile(outputPath));
     } catch (cause) {

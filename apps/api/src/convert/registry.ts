@@ -10,6 +10,9 @@ import { RhwpCliConverter, RhwpConverter, type RhwpCliConfig, type RhwpConfig } 
 export interface EngineConfig {
   gotenbergUrl: string;
   hwpSidecarUrl: string;
+  // Client-side abort for the HWP/Office sidecar. Defaults to the converter's
+  // own 150s when omitted; kept above the sidecar's internal 120s soffice cap.
+  hwpSidecarTimeoutMs?: number;
   officeEngine: "gotenberg" | "hwp-sidecar" | "builtin";
   rhwp: RhwpConfig;
   rhwpCli: RhwpCliConfig;
@@ -46,11 +49,11 @@ function officeConverter(cfg: EngineConfig, mode: ConversionMode): Converter {
   }
   switch (cfg.officeEngine) {
     case "hwp-sidecar":
-      return new H2OrestartConverter(cfg.hwpSidecarUrl);
+      return new H2OrestartConverter(cfg.hwpSidecarUrl, undefined, cfg.hwpSidecarTimeoutMs);
     case "builtin":
       if (mode === "precise") {
         return new QualityFallbackConverter("office-quality-chain", "office", mode, [
-          new H2OrestartConverter(cfg.hwpSidecarUrl),
+          new H2OrestartConverter(cfg.hwpSidecarUrl, undefined, cfg.hwpSidecarTimeoutMs),
           new BuiltinOfficeConverter(),
         ]);
       }
@@ -71,7 +74,7 @@ function hwpConverter(cfg: EngineConfig, mode: ConversionMode): Converter {
   if (mode === "quick") {
     return new QualityFallbackConverter("hwp-quick-chain", "hwp", mode, [
       new BuiltinOfficeConverter(),
-      new H2OrestartConverter(cfg.hwpSidecarUrl),
+      new H2OrestartConverter(cfg.hwpSidecarUrl, undefined, cfg.hwpSidecarTimeoutMs),
       ...(cfg.rhwp.enabled ? [new RhwpConverter(cfg.rhwp)] : []),
     ]);
   }
@@ -79,7 +82,7 @@ function hwpConverter(cfg: EngineConfig, mode: ConversionMode): Converter {
     ...(cfg.hancom ? [new HancomConverter(cfg.hancom)] : []),
     ...(cfg.rhwpCli.enabled ? [new RhwpCliConverter({ ...cfg.rhwpCli, mode: "pdf" })] : []),
     ...(cfg.rhwp.enabled ? [new RhwpConverter(cfg.rhwp)] : []),
-    new H2OrestartConverter(cfg.hwpSidecarUrl),
+    new H2OrestartConverter(cfg.hwpSidecarUrl, undefined, cfg.hwpSidecarTimeoutMs),
     new BuiltinOfficeConverter(),
   ]);
 }
