@@ -58,6 +58,30 @@ sys.stderr.write("LAYOUT_OVERFLOW: page=1 para=1\\n")
   return workerPath;
 }
 
+// Records what the worker observed (RHWP_FONT_PATHS env + cwd-relative ttfs/hwp
+// link) so the test can assert font wiring after the run dir is torn down.
+async function fakeRhwpWorkerProbe(
+  dir: string,
+): Promise<{ readonly workerScript: string; readonly logPath: string }> {
+  const workerScript = join(dir, "rhwp-worker-probe.py");
+  const logPath = join(dir, "probe.log");
+  await writeFile(
+    workerScript,
+    `import json
+import os
+import pathlib
+import sys
+font_paths = os.environ.get("RHWP_FONT_PATHS", "")
+link = os.path.isdir(os.path.join(os.getcwd(), "ttfs", "hwp"))
+pathlib.Path(${JSON.stringify(logPath)}).write_text(
+    json.dumps({"font_env": font_paths, "font_link": link})
+)
+pathlib.Path(sys.argv[2]).write_bytes(b"%PDF-fake-rhwp")
+`,
+  );
+  return { workerScript, logPath };
+}
+
 describe("RhwpCliConverter", () => {
   it("runs rhwp export-pdf and returns PDF bytes", async () => {
     const dir = await mkdtemp(join(tmpdir(), "rhwp-cli-test-"));
@@ -135,10 +159,36 @@ describe("RhwpConverter", () => {
       pythonPath: "python3",
       workerScript,
       timeoutMs: 10_000,
+      fontPaths: [],
     });
 
     await expect(c.convert({ filename: "sample.hwp", data: Buffer.from("hwp") })).rejects.toThrow(
       /layout overflow/,
     );
+  });
+
+  it("links the font dir and passes RHWP_FONT_PATHS to the python worker", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "rhwp-worker-test-"));
+    const fontDir = join(dir, "fonts");
+    await mkdir(fontDir);
+    const { workerScript, logPath } = await fakeRhwpWorkerProbe(dir);
+    const c = new RhwpConverter({
+      enabled: true,
+      pythonPath: "python3",
+      workerScript,
+      timeoutMs: 10_000,
+      fontPaths: [fontDir],
+    });
+
+    const pdf = await c.convert({ filename: "sample.hwp", data: Buffer.from("hwp") });
+
+    expect(pdf.toString()).toBe("%PDF-fake-rhwp");
+    const log = JSON.parse(await readFile(logPath, "utf8")) as {
+      font_env: string;
+      font_link: boolean;
+    };
+    // The temp run dir is torn down after convert(); the worker records what it saw.
+    expect(log.font_env).toBe(fontDir);
+    expect(log.font_link).toBe(true);
   });
 });

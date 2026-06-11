@@ -1,4 +1,5 @@
 import type { JobService } from "../jobs/jobService.js";
+import { isPermanentFailure } from "../convert/failure.js";
 import { JobQueue } from "./jobQueue.js";
 import { processConversion, type WorkerDeps } from "./processConversion.js";
 
@@ -19,6 +20,22 @@ export async function runWorkerOnce(deps: WorkerRuntimeDeps, workerId: string): 
   const result = await processConversion(deps, job);
   if (result.ok) {
     await deps.queue.release(job.id);
+    return true;
+  }
+
+  // Deterministic failures (password, corrupt, unsupported …) cannot succeed on
+  // retry — burning the 3-attempt budget on them re-runs the whole engine chain
+  // for nothing and delays other users' jobs. Only transient failures retry.
+  // Mirror the give-up path's lock semantics: release first (retryOrGiveUp's
+  // give-up branch clears the lock before the caller marks the job failed), then
+  // markFailed. We skip retryOrGiveUp entirely so attempts is not consumed.
+  if (isPermanentFailure(result.error)) {
+    await deps.queue.release(job.id);
+    await deps.jobs.markFailed(job.id, {
+      engine: result.engine,
+      durationMs: result.durationMs,
+      error: result.error,
+    });
     return true;
   }
 

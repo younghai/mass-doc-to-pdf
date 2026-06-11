@@ -20,6 +20,12 @@ function officeEngine(env: NodeJS.ProcessEnv): EngineConfig["officeEngine"] {
 }
 
 export function loadEngineConfig(env: NodeJS.ProcessEnv): EngineConfig {
+  // Shared by both rhwp paths (Python worker + Rust CLI) so font discovery is
+  // configured identically regardless of which renderer runs.
+  const fontPaths = (env.RHWP_FONT_PATHS ?? "")
+    .split(":")
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0);
   const cfg: EngineConfig = {
     gotenbergUrl: env.GOTENBERG_URL ?? "http://localhost:3000",
     hwpSidecarUrl: env.HWP_SIDECAR_URL ?? "http://localhost:8080",
@@ -30,15 +36,13 @@ export function loadEngineConfig(env: NodeJS.ProcessEnv): EngineConfig {
       pythonPath: env.RHWP_PYTHON ?? "python3",
       workerScript: env.RHWP_WORKER_SCRIPT || undefined,
       timeoutMs: Number(env.RHWP_TIMEOUT_MS ?? 120_000),
+      fontPaths,
     },
     rhwpCli: {
       enabled: env.RHWP_CLI_ENABLED === "1",
       cliPath: env.RHWP_CLI_PATH ?? "rhwp",
       timeoutMs: Number(env.RHWP_CLI_TIMEOUT_MS ?? env.RHWP_TIMEOUT_MS ?? 120_000),
-      fontPaths: (env.RHWP_FONT_PATHS ?? "")
-        .split(":")
-        .map((value) => value.trim())
-        .filter((value) => value.length > 0),
+      fontPaths,
       mode: rhwpCliMode(env),
     },
   };

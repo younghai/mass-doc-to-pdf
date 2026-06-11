@@ -22,6 +22,10 @@ export function reportObjectKey(userId: string, jobId: string): string {
   return `${userId}/report/${jobId}.json`;
 }
 
+export function previewObjectKey(userId: string, jobId: string): string {
+  return `${userId}/preview/${jobId}.png`;
+}
+
 export function pdfPageCount(pdf: Buffer): number | undefined {
   const text = pdf.toString("latin1");
   // /Count from the /Type /Pages node works for PDF 1.5+ XRef-stream PDFs where

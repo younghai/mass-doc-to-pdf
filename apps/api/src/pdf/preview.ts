@@ -78,3 +78,74 @@ export class LibreOfficePdfPreviewRenderer implements PdfPreviewRenderer {
     }
   }
 }
+
+export interface PdftoppmPreviewRendererOptions {
+  readonly executable?: string;
+  readonly timeoutMs?: number;
+}
+
+/**
+ * Renders the first PDF page with poppler's pdftoppm (~50ms, a few MB of RSS).
+ * This is the preferred preview renderer: it spawns a tiny short-lived process
+ * instead of a full LibreOffice instance (hundreds of MB, 1–3s).
+ */
+export class PdftoppmPreviewRenderer implements PdfPreviewRenderer {
+  private readonly executable: string;
+  private readonly timeoutMs: number;
+
+  constructor(options: PdftoppmPreviewRendererOptions = {}) {
+    this.executable = options.executable ?? process.env.PDFTOPPM_PATH ?? "pdftoppm";
+    this.timeoutMs = options.timeoutMs ?? timeoutFromEnv();
+  }
+
+  async renderFirstPagePng(pdf: Buffer): Promise<Buffer> {
+    const dir = await mkdtemp(join(tmpdir(), "hwptopdf-preview-"));
+    const input = join(dir, "preview.pdf");
+    const outPrefix = join(dir, "preview");
+
+    try {
+      await writeFile(input, pdf);
+      // -singlefile makes pdftoppm write exactly `${outPrefix}.png` (no page-number
+      // suffix); -r 96 keeps the raster small for a thumbnail-grade preview.
+      await execFileAsync(
+        this.executable,
+        ["-png", "-f", "1", "-l", "1", "-singlefile", "-r", "96", input, outPrefix],
+        { timeout: this.timeoutMs, maxBuffer: MAX_STDIO_BYTES },
+      );
+      return await readFile(`${outPrefix}.png`);
+    } catch (err) {
+      throw renderError(err);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }
+}
+
+/**
+ * Tries each renderer in order and returns the first success. Used to prefer the
+ * cheap pdftoppm path while keeping LibreOffice as a fallback for environments
+ * where poppler is unavailable. If every renderer fails, the last error is thrown.
+ */
+export class FallbackPreviewRenderer implements PdfPreviewRenderer {
+  constructor(private readonly renderers: readonly PdfPreviewRenderer[]) {}
+
+  async renderFirstPagePng(pdf: Buffer): Promise<Buffer> {
+    let lastError: PdfPreviewError | undefined;
+    for (const renderer of this.renderers) {
+      try {
+        return await renderer.renderFirstPagePng(pdf);
+      } catch (err) {
+        lastError = renderError(err);
+      }
+    }
+    throw lastError ?? new PdfPreviewError("no preview renderer available");
+  }
+}
+
+/** Default renderer: pdftoppm (~50ms, tiny) before LibreOffice (heavy). */
+export function defaultPreviewRenderer(): PdfPreviewRenderer {
+  return new FallbackPreviewRenderer([
+    new PdftoppmPreviewRenderer(),
+    new LibreOfficePdfPreviewRenderer(),
+  ]);
+}

@@ -29,14 +29,18 @@ function makeApp(engine: Converter, authed = true) {
     get,
     delete: vi.fn(async () => {}),
   };
+  // Inject a stub renderer so the post-success preview pre-render is deterministic
+  // (the real defaultPreviewRenderer would shell out to pdftoppm/LibreOffice).
+  const pdfPreview = { renderFirstPagePng: vi.fn(async () => Buffer.from("\x89PNG")) };
   const deps: AppDeps = {
     registry: { forFormat },
     storage,
     jobs: new JobService(db.prisma),
+    pdfPreview,
     webOrigin: "http://localhost",
     getSessionUser: async () => (authed ? { id: userId, email: "u@x.c" } : null),
   };
-  return { app: buildApp(deps), storage, forFormat };
+  return { app: buildApp(deps), storage, forFormat, pdfPreview };
 }
 
 function deferred<T>() {
@@ -71,7 +75,13 @@ describe("POST /api/convert", () => {
     expect(storage.put).toHaveBeenCalledTimes(1);
     output.resolve(Buffer.from("%PDF-1.7"));
     await waitForJob(running.id, "success");
-    expect(storage.put).toHaveBeenCalledTimes(3);
+    // source + output PDF + quality report + pre-rendered preview PNG.
+    expect(storage.put).toHaveBeenCalledTimes(4);
+    expect(
+      vi.mocked(storage.put).mock.calls.some(
+        ([key, , contentType]) => key === `${userId}/preview/${running.id}.png` && contentType === "image/png",
+      ),
+    ).toBe(true);
   });
 
   it("stores a quality report when the converter provides one", async () => {

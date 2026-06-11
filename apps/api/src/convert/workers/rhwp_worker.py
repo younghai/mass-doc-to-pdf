@@ -9,12 +9,31 @@ from __future__ import annotations
 
 import importlib
 import json
+import os
 import sys
 from pathlib import Path
 
 
 def _emit(payload: dict[str, str | int]) -> None:
     print(json.dumps(payload, ensure_ascii=False))
+
+
+def _apply_font_paths(rhwp) -> str | None:
+    """Best-effort: rhwp-python's font API differs across versions, so try the
+    known entry points guarded by hasattr and report which one applied."""
+    raw = os.environ.get("RHWP_FONT_PATHS", "")
+    paths = [p for p in (s.strip() for s in raw.split(":")) if p]
+    if not paths:
+        return None
+    for name in ("set_font_paths", "set_font_dirs", "add_font_paths"):
+        fn = getattr(rhwp, name, None)
+        if callable(fn):
+            try:
+                fn(paths)
+                return name
+            except (TypeError, ValueError):
+                continue
+    return None
 
 
 def _fail(message: str) -> int:
@@ -54,6 +73,18 @@ def main(argv: list[str]) -> int:
     parse = getattr(rhwp, "parse", None)
     if not callable(parse):
         return _fail("rhwp.parse is not available")
+
+    applied = _apply_font_paths(rhwp)
+    if applied is not None:
+        print(
+            json.dumps({"info": f"font paths applied via {applied}"}),
+            file=sys.stderr,
+        )
+    elif os.environ.get("RHWP_FONT_PATHS", "").strip():
+        print(
+            json.dumps({"info": "font paths set in env only (no rhwp font API found)"}),
+            file=sys.stderr,
+        )
 
     try:
         doc = parse(str(input_path))

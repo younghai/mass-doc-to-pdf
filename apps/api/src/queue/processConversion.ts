@@ -1,5 +1,7 @@
-import { normalizeQualityReport, reportObjectKey } from "../convert/quality.js";
+import { normalizeQualityReport, previewObjectKey, reportObjectKey } from "../convert/quality.js";
 import { isReportingConverter, type ConversionResult } from "../convert/types.js";
+import { errorMessage as localizedErrorMessage } from "../convert/failure.js";
+import { defaultPreviewRenderer, type PdfPreviewRenderer } from "../pdf/preview.js";
 import type { Registry } from "../convert/registry.js";
 import type { Storage } from "../storage/s3.js";
 import type { JobService } from "../jobs/jobService.js";
@@ -9,16 +11,12 @@ export interface WorkerDeps {
   readonly registry: Registry;
   readonly storage: Storage;
   readonly jobs: JobService;
+  readonly pdfPreview?: PdfPreviewRenderer;
 }
 
 export type ProcessResult =
   | { readonly ok: true; readonly engine: string; readonly durationMs: number }
   | { readonly ok: false; readonly engine: string; readonly durationMs: number; readonly error: string };
-
-function errorMessage(err: unknown): string {
-  if (err instanceof Error) return err.message;
-  return "unknown conversion failure";
-}
 
 /**
  * Convert one claimed job: read its source from storage, run the engine chain,
@@ -61,6 +59,16 @@ export async function processConversion(deps: WorkerDeps, job: QueuedJob): Promi
       Buffer.from(JSON.stringify(report)),
       "application/json",
     );
+    // Pre-render the first-page PNG once at conversion time so the preview route
+    // never has to spawn a renderer per request. Best-effort: a preview failure
+    // must never fail the conversion (the route falls back to on-demand render).
+    try {
+      const renderer = deps.pdfPreview ?? defaultPreviewRenderer();
+      const png = await renderer.renderFirstPagePng(result.pdf);
+      await deps.storage.put(previewObjectKey(job.userId, job.id), png, "image/png");
+    } catch {
+      // best-effort only
+    }
     await deps.jobs.markSuccess(job.id, {
       engine: report.selectedEngine,
       durationMs,
@@ -72,7 +80,7 @@ export async function processConversion(deps: WorkerDeps, job: QueuedJob): Promi
       ok: false,
       engine: engineName,
       durationMs: Date.now() - started,
-      error: errorMessage(err),
+      error: localizedErrorMessage(err),
     };
   }
 }

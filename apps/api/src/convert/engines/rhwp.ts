@@ -13,6 +13,7 @@ export interface RhwpConfig {
   readonly pythonPath: string;
   readonly workerScript?: string;
   readonly timeoutMs: number;
+  readonly fontPaths: readonly string[];
 }
 
 export interface RhwpCliConfig {
@@ -33,6 +34,19 @@ function assertNoLayoutOverflow(engine: string, output: string): void {
   }
 }
 
+// Mirror the rhwp-cli convention: expose fonts as ttfs/hwp/* symlinks in the run
+// dir so the rhwp core (CLI and Python) can discover them relative to cwd.
+async function linkFontPaths(dir: string, fontPaths: readonly string[]): Promise<void> {
+  if (fontPaths.length === 0) return;
+  const fontDir = join(dir, "ttfs", "hwp");
+  await mkdir(fontDir, { recursive: true });
+  await Promise.all(
+    fontPaths.map((fontPath, index) =>
+      symlink(fontPath, join(fontDir, `${index}-${basename(fontPath)}`)),
+    ),
+  );
+}
+
 export class RhwpConverter implements Converter {
   readonly name = "rhwp";
 
@@ -49,13 +63,24 @@ export class RhwpConverter implements Converter {
 
     try {
       await writeFile(inputPath, input.data);
+      await linkFontPaths(dir, this.cfg.fontPaths);
       const result = await execFileAsync(
         this.cfg.pythonPath,
         [this.cfg.workerScript ?? defaultWorkerScript(), inputPath, outputPath],
         {
           timeout: this.cfg.timeoutMs,
-          maxBuffer: 1024 * 1024,
+          // Match the CLI ceiling: documents that emit many warnings can exceed 1MB
+          // of stdio, which would kill an otherwise successful conversion.
+          maxBuffer: 4 * 1024 * 1024,
           encoding: "utf8",
+          // The rhwp core reads ttfs/hwp relative to cwd (same convention as the CLI).
+          cwd: dir,
+          env: {
+            ...process.env,
+            ...(this.cfg.fontPaths.length > 0
+              ? { RHWP_FONT_PATHS: this.cfg.fontPaths.join(":") }
+              : {}),
+          },
         },
       );
       assertNoLayoutOverflow(this.name, `${result.stdout}\n${result.stderr}`);
@@ -90,7 +115,7 @@ export class RhwpCliConverter implements Converter {
 
     try {
       await writeFile(inputPath, input.data);
-      await this.linkFontPaths(dir);
+      await linkFontPaths(dir, this.cfg.fontPaths);
       const result = await execFileAsync(this.cfg.cliPath, this.args(inputPath, outputPath), {
         timeout: this.cfg.timeoutMs,
         maxBuffer: 4 * 1024 * 1024,
@@ -113,16 +138,5 @@ export class RhwpCliConverter implements Converter {
 
   private args(inputPath: string, outputPath: string): readonly string[] {
     return ["export-pdf", inputPath, "-o", outputPath];
-  }
-
-  private async linkFontPaths(dir: string): Promise<void> {
-    if (this.cfg.fontPaths.length === 0) return;
-    const fontDir = join(dir, "ttfs", "hwp");
-    await mkdir(fontDir, { recursive: true });
-    await Promise.all(
-      this.cfg.fontPaths.map((fontPath, index) =>
-        symlink(fontPath, join(fontDir, `${index}-${basename(fontPath)}`)),
-      ),
-    );
   }
 }

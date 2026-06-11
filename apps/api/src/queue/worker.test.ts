@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
 import { setupTestDb } from "../test/testDb.js";
 import { JobService } from "../jobs/jobService.js";
 import { JobQueue } from "./jobQueue.js";
@@ -64,11 +64,14 @@ beforeEach(async () => {
 });
 
 describe("runWorkerOnce", () => {
-  it("converts a claimed job, stores pdf + report, marks success", async () => {
+  it("converts a claimed job, stores pdf + report + preview, marks success", async () => {
     const storage = new MemoryStorage();
     const queue = new JobQueue(db.prisma);
     const engine: Converter = { name: "rhwp", async convert() { return Buffer.from("%PDF-1.7"); } };
-    const deps: WorkerRuntimeDeps = { registry: registryWith(engine), storage, jobs, queue };
+    // Stub renderer so the post-success preview pre-render is deterministic and
+    // never shells out to pdftoppm/LibreOffice during the test.
+    const pdfPreview = { renderFirstPagePng: vi.fn(async () => Buffer.from("\x89PNG")) };
+    const deps: WorkerRuntimeDeps = { registry: registryWith(engine), storage, jobs, queue, pdfPreview };
 
     const id = await seedQueued(storage, queue);
     expect(await runWorkerOnce(deps, "w1")).toBe(true);
@@ -78,6 +81,9 @@ describe("runWorkerOnce", () => {
     expect(job?.engine).toBe("rhwp");
     expect(storage.map.has(`${userId}/out/${id}.pdf`)).toBe(true);
     expect(storage.map.has(`${userId}/report/${id}.json`)).toBe(true);
+    // The first-page PNG is pre-rendered at conversion time for the preview route.
+    expect(pdfPreview.renderFirstPagePng).toHaveBeenCalledTimes(1);
+    expect(storage.map.has(`${userId}/preview/${id}.png`)).toBe(true);
 
     const row = await db.prisma.conversionJob.findUnique({ where: { id } });
     expect(row?.lockedAt).toBeNull();
@@ -108,6 +114,47 @@ describe("runWorkerOnce", () => {
     const job = await jobs.get(userId, id);
     expect(job?.status).toBe("failed");
     expect(job?.error).toMatch(/boom/);
+  });
+
+  it("permanently fails password-protected jobs without burning retries", async () => {
+    const storage = new MemoryStorage();
+    const queue = new JobQueue(db.prisma);
+    const engine: Converter = {
+      name: "rhwp",
+      async convert() { throw new Error("password protected document"); },
+    };
+    const deps: WorkerRuntimeDeps = { registry: registryWith(engine), storage, jobs, queue };
+
+    const id = await seedQueued(storage, queue);
+    expect(await runWorkerOnce(deps, "w")).toBe(true);
+
+    const job = await jobs.get(userId, id);
+    expect(job?.status).toBe("failed");
+    expect(job?.error).toMatch(/암호 문서/);
+
+    // A deterministic failure must not consume the retry budget: the job is
+    // marked failed on the first pass and attempts stays at 0 (no re-queue).
+    const row = await db.prisma.conversionJob.findUnique({ where: { id } });
+    expect(row?.attempts).toBe(0);
+    expect(row?.lockedAt).toBeNull();
+  });
+
+  it("still retries transient failures (e.g. sidecar down)", async () => {
+    const storage = new MemoryStorage();
+    const queue = new JobQueue(db.prisma);
+    const engine: Converter = {
+      name: "rhwp",
+      async convert() { throw new Error("sidecar connection refused"); },
+    };
+    const deps: WorkerRuntimeDeps = { registry: registryWith(engine), storage, jobs, queue };
+
+    const id = await seedQueued(storage, queue);
+    expect(await runWorkerOnce(deps, "w")).toBe(true);
+
+    // Transient: re-queued for another attempt, retry budget consumed.
+    expect((await jobs.get(userId, id))?.status).toBe("queued");
+    const row = await db.prisma.conversionJob.findUnique({ where: { id } });
+    expect(row?.attempts).toBe(1);
   });
 });
 

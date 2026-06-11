@@ -5,7 +5,7 @@ import { ensureDevAuthUser } from "./auth/devAuth.js";
 import { buildAuthConfig } from "./auth/authConfig.js";
 import { buildRegistry } from "./convert/registry.js";
 import { applyPreflight, logEnginePreflight, probeEngines } from "./convert/preflight.js";
-import { reportObjectKey } from "./convert/quality.js";
+import { previewObjectKey, reportObjectKey } from "./convert/quality.js";
 import { JobService } from "./jobs/jobService.js";
 import { JobQueue } from "./queue/jobQueue.js";
 import { LocalFileStorage, S3Storage, makeS3Client, type Storage } from "./storage/s3.js";
@@ -78,9 +78,12 @@ setInterval(async () => {
       select: { id: true, userId: true, sourceKey: true, outputKey: true },
     });
     for (const job of expired) {
-      const keys = [job.sourceKey, job.outputKey, reportObjectKey(job.userId, job.id)].filter(
-        (k): k is string => k != null,
-      );
+      const keys = [
+        job.sourceKey,
+        job.outputKey,
+        reportObjectKey(job.userId, job.id),
+        previewObjectKey(job.userId, job.id),
+      ].filter((k): k is string => k != null);
       await Promise.allSettled(keys.map((key) => storage.delete(key)));
       await prisma.conversionJob.delete({ where: { id: job.id } });
     }

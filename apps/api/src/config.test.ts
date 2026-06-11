@@ -7,7 +7,12 @@ describe("loadEngineConfig", () => {
     expect(cfg.gotenbergUrl).toBe("http://localhost:3000");
     expect(cfg.hwpSidecarUrl).toBe("http://localhost:8080");
     expect(cfg.officeEngine).toBe("gotenberg");
-    expect(cfg.rhwp).toEqual({ enabled: true, pythonPath: "python3", timeoutMs: 120_000 });
+    expect(cfg.rhwp).toEqual({
+      enabled: true,
+      pythonPath: "python3",
+      timeoutMs: 120_000,
+      fontPaths: [],
+    });
     expect(cfg.rhwpCli).toEqual({
       enabled: false,
       cliPath: "rhwp",
@@ -55,7 +60,14 @@ describe("loadEngineConfig", () => {
       pythonPath: "/opt/rhwp/bin/python",
       workerScript: "/srv/rhwp_worker.py",
       timeoutMs: 90_000,
+      fontPaths: [],
     });
+  });
+
+  it("shares RHWP_FONT_PATHS across the rhwp worker and CLI renderers", () => {
+    const cfg = loadEngineConfig({ RHWP_FONT_PATHS: "/opt/fonts/hwp:/opt/fonts/nanum" });
+    expect(cfg.rhwp.fontPaths).toEqual(["/opt/fonts/hwp", "/opt/fonts/nanum"]);
+    expect(cfg.rhwpCli.fontPaths).toEqual(["/opt/fonts/hwp", "/opt/fonts/nanum"]);
   });
 
   it("routes office conversion to the sidecar when configured for standalone mode", () => {

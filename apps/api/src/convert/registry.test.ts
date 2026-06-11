@@ -7,7 +7,7 @@ describe("buildRegistry", () => {
     gotenbergUrl: "http://g",
     hwpSidecarUrl: "http://h",
     officeEngine: "gotenberg",
-    rhwp: { enabled: true, pythonPath: "python3", timeoutMs: 120_000 },
+    rhwp: { enabled: true, pythonPath: "python3", timeoutMs: 120_000, fontPaths: [] },
     rhwpCli: {
       enabled: false,
       cliPath: "rhwp",
