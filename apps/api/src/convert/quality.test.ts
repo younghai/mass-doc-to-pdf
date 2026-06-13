@@ -115,4 +115,16 @@ describe("pdfTextChars", () => {
     ]);
     expect(pdfTextChars(pdf)).toBe(2);
   });
+
+  it("does not backtrack exponentially on an unterminated TJ array", () => {
+    // A real 656KB rhwp PDF pegged a CPU here: in the old TJ-array regex both
+    // alternation branches could match a backslash, so an unterminated
+    // "[ \a \a \a … " run (no "] TJ") explored 2^n paths. Just 30 escaped pairs
+    // hang the old pattern for many seconds; the de-ambiguated one returns
+    // instantly. The 5s vitest default would fail a regression here.
+    const pdf = Buffer.from("%PDF-1.4\nBT [" + "\\a".repeat(30) + " ET\n%%EOF\n");
+    const start = Date.now();
+    expect(pdfTextChars(pdf)).toBe(0);
+    expect(Date.now() - start).toBeLessThan(1000);
+  });
 });

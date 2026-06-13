@@ -42,12 +42,27 @@ services:
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
       DEV_AUTH: ${DEV_AUTH:-1}
+      # The image bakes NODE_ENV=production, which refuses DEV_AUTH=1 unless
+      # explicitly allowed. This is the localhost-only dev compose, so opt in;
+      # the production guard stays intact (docker-compose.prod.yml has no
+      # ALLOW_DEV_AUTH and defaults DEV_AUTH=0).
+      ALLOW_DEV_AUTH: ${ALLOW_DEV_AUTH:-1}
       WEB_ORIGIN: http://localhost:8081
       PORT: "8000"
       USE_QUEUE: "1"
     volumes: ["api-data:/data"]
     ports: ["8010:8000"]
     depends_on: [gotenberg, hwp-sidecar, minio, createbucket]
+    # The api applies Prisma migrations on boot. Gating the worker on this
+    # healthcheck (below) keeps the worker from opening the SQLite file mid
+    # migration — a concurrent connection makes `migrate deploy` fail with
+    # "database is locked" and crash-loops the api.
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:8000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 4s
+      retries: 12
+      start_period: 30s
 
   worker:
     build:
@@ -64,17 +79,22 @@ services:
       S3_SECRET_KEY: minio12345
       AUTH_SECRET: ${AUTH_SECRET:-dev}
       DEV_AUTH: "1"
+      ALLOW_DEV_AUTH: ${ALLOW_DEV_AUTH:-1}
       WEB_ORIGIN: http://localhost:8081
       USE_QUEUE: "1"
     volumes: ["api-data:/data"]
-    depends_on: [api]
+    depends_on:
+      api:
+        condition: service_healthy
 
   web:
     build:
       context: .
       dockerfile: apps/web/Dockerfile
     ports: ["8081:80"]
-    depends_on: [api]
+    depends_on:
+      api:
+        condition: service_healthy
 
 volumes:
   minio-data: {}

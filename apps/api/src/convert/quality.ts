@@ -50,12 +50,26 @@ export function pdfPageCount(pdf: Buffer): number | undefined {
 // so a backslash escape counts as the single glyph it renders, not two bytes.
 const PDF_ESCAPE_RE = /\\[\s\S]/g;
 const PDF_STREAM_RE = /stream\r?\n([\s\S]*?)endstream/g;
+// Two defenses make these operator regexes safe on hostile/binary PDF bytes:
+//  1. Mutually exclusive alternation branches — the `\\[\s\S]` (escaped pair)
+//     branch owns the backslash and the bracket-exclusion branch also excludes
+//     it (`[^\\]`, `[^\]\\]`). Overlapping branches make the lazy group
+//     ambiguous and backtrack *exponentially* (a real 656KB rhwp PDF pegged a
+//     CPU for minutes here).
+//  2. A bounded repetition (`{0,GLYPH_RUN_MAX}?`) instead of `*?`. Without it a
+//     long run of unmatched `[`/`(` is still *quadratic* — every start position
+//     rescans to end. Capping the run keeps each attempt O(GLYPH_RUN_MAX), so
+//     the whole scan is linear. Real show-text operands are far shorter.
+const GLYPH_RUN_MAX = 8192;
 // Literal-string show operators: (...) Tj | (...) ' | (...) "
-const LITERAL_SHOW_RE = /\(((?:\\[\s\S]|[^\\])*?)\)\s*(?:Tj|'|")/g;
+const LITERAL_SHOW_RE = new RegExp(`\\(((?:\\\\[\\s\\S]|[^\\\\]){0,${GLYPH_RUN_MAX}}?)\\)\\s*(?:Tj|'|")`, "g");
 // TJ array: [ ... ] TJ — kerning array mixing literal (...) and <hex> chunks.
-const TJ_ARRAY_RE = /\[((?:\\[\s\S]|[^\]])*?)\]\s*TJ/g;
-const TJ_LITERAL_RE = /\(((?:\\[\s\S]|[^\\])*?)\)/g;
+const TJ_ARRAY_RE = new RegExp(`\\[((?:\\\\[\\s\\S]|[^\\]\\\\]){0,${GLYPH_RUN_MAX}}?)\\]\\s*TJ`, "g");
+const TJ_LITERAL_RE = new RegExp(`\\(((?:\\\\[\\s\\S]|[^\\\\]){0,${GLYPH_RUN_MAX}}?)\\)`, "g");
 const TJ_HEX_RE = /<([0-9A-Fa-f\s]*)>/g;
+// Hard ceiling on how much of each buffer the operator regexes scan, as a final
+// backstop on top of the per-match bound above.
+const MAX_GLYPH_SCAN_BYTES = 2 * 1024 * 1024;
 // Standalone hex-string show: <hex> Tj
 const HEX_SHOW_RE = /<([0-9A-Fa-f\s]*)>\s*Tj/g;
 
@@ -71,7 +85,8 @@ function hexGlyphCount(hex: string): number {
   return Math.floor(digits / 4);
 }
 
-function countGlyphs(content: string): number {
+function countGlyphs(scanned: string): number {
+  const content = scanned.length > MAX_GLYPH_SCAN_BYTES ? scanned.slice(0, MAX_GLYPH_SCAN_BYTES) : scanned;
   let total = 0;
   for (const m of content.matchAll(LITERAL_SHOW_RE)) {
     total += literalGlyphCount(m[1]);

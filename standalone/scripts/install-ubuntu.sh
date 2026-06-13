@@ -59,7 +59,21 @@ RHWP_PYTHON_VERSION="${RHWP_PYTHON_VERSION:-0.7.0}"
 APP_DIR="${APP_DIR:-/opt/mass-doc-to-pdf}"
 mkdir -p "${APP_DIR}"
 python3 -m venv "${APP_DIR}/venv"
-if ! "${APP_DIR}/venv/bin/pip" install --no-cache-dir "rhwp-python==${RHWP_PYTHON_VERSION}"; then
+if "${APP_DIR}/venv/bin/pip" install --no-cache-dir "rhwp-python==${RHWP_PYTHON_VERSION}"; then
+  # rhwp-python 0.7.0's manylinux wheel bundles a freetype that predates
+  # FT_Palette_Select, so `import rhwp` fails with "undefined symbol:
+  # FT_Palette_Select". Repoint the bundled lib at the distro freetype (>=2.10
+  # exports the symbol) so the precision engine actually loads instead of
+  # silently falling back to H2Orestart. No-op if the wheel layout changes.
+  SYS_FT="$(ls /usr/lib/*/libfreetype.so.6 2>/dev/null | head -1)"
+  if [ -n "${SYS_FT}" ]; then
+    find "${APP_DIR}/venv" -path '*/rhwp_python.libs/libfreetype-*.so.6' \
+      -exec ln -sf "${SYS_FT}" {} + 2>/dev/null || true
+  fi
+  if ! "${APP_DIR}/venv/bin/python3" -c "import rhwp" 2>/dev/null; then
+    echo "WARN: rhwp installed but 'import rhwp' fails — HWP conversion will fall back to LibreOffice/H2Orestart (check /health/engines after boot)." >&2
+  fi
+else
   echo "WARN: rhwp-python install failed — HWP conversion will fall back to LibreOffice/H2Orestart (check /health/engines after boot)." >&2
 fi
 
