@@ -1,5 +1,5 @@
 # Build context is the repo root: docker build -f apps/web/Dockerfile .
-FROM node:20-slim AS build
+FROM node:26-slim AS build
 RUN corepack enable
 WORKDIR /app
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
