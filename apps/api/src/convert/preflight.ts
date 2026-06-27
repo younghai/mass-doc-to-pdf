@@ -8,6 +8,8 @@ const PROBE_TIMEOUT_MS = 10_000;
 export interface EngineProbe {
   readonly available: boolean;
   readonly reason?: string;
+  /** Detected engine version (rhwp core / rhwp-cli), surfaced by /health/engines. */
+  readonly version?: string;
 }
 
 export interface EnginePreflight {
@@ -16,11 +18,23 @@ export interface EnginePreflight {
   readonly builtin: EngineProbe;
 }
 
-/** Injectable runner so tests don't depend on the host's python/chrome. */
-export type ProbeRunner = (file: string, args: readonly string[]) => Promise<void>;
+/**
+ * Injectable runner so tests don't depend on the host's python/chrome. Resolves
+ * with the command's stdout (used to capture engine versions); rejects on
+ * non-zero exit, mirroring execFile.
+ */
+export type ProbeRunner = (file: string, args: readonly string[]) => Promise<string>;
 
 const defaultRunner: ProbeRunner = (file, args) =>
-  execFileAsync(file, [...args], { timeout: PROBE_TIMEOUT_MS }).then(() => undefined);
+  execFileAsync(file, [...args], { timeout: PROBE_TIMEOUT_MS }).then((r) => r.stdout ?? "");
+
+/** First semantic version (optionally v-prefixed) in a version string, if any. */
+function parseVersion(out: string | undefined): string | undefined {
+  const match = (out ?? "").match(/v?\d+\.\d+\.\d+(?:[-+][\w.]+)?/);
+  if (match) return match[0];
+  const trimmed = (out ?? "").trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
 
 function errorCode(err: unknown): string | undefined {
   if (err && typeof err === "object" && "code" in err) {
@@ -47,11 +61,16 @@ async function probeRhwp(cfg: EngineConfig, run: ProbeRunner): Promise<EnginePro
     return { available: false, reason: "disabled by RHWP_ENABLED=0" };
   }
   try {
-    // `python -c "import rhwp"` exit code is trustworthy: only a clean import
-    // (exit 0) marks the engine available. A missing module raises
-    // ModuleNotFoundError and exits non-zero.
-    await run(cfg.rhwp.pythonPath, ["-c", "import rhwp"]);
-    return { available: true };
+    // The import exit code is trustworthy: only a clean import (exit 0) marks
+    // the engine available. A missing module raises ModuleNotFoundError and
+    // exits non-zero. We also print the core version (getattr-guarded so older
+    // wheels without rhwp_core_version still exit 0 and stay available).
+    const out = await run(cfg.rhwp.pythonPath, [
+      "-c",
+      "import rhwp; print(getattr(rhwp, 'rhwp_core_version', lambda: '')() or '', end='')",
+    ]);
+    const version = parseVersion(out);
+    return version ? { available: true, version } : { available: true };
   } catch (err) {
     if (errorCode(err) === "ENOENT") {
       return { available: false, reason: `python interpreter not found: ${cfg.rhwp.pythonPath}` };
@@ -65,8 +84,9 @@ async function probeRhwpCli(cfg: EngineConfig, run: ProbeRunner): Promise<Engine
     return { available: false, reason: "disabled by RHWP_CLI_ENABLED=0" };
   }
   try {
-    await run(cfg.rhwpCli.cliPath, ["--version"]);
-    return { available: true };
+    const out = await run(cfg.rhwpCli.cliPath, ["--version"]);
+    const version = parseVersion(out);
+    return version ? { available: true, version } : { available: true };
   } catch (err) {
     // Asymmetric with rhwp on purpose: a present binary may not implement
     // `--version` (CLI conventions are not trustworthy), so only a true ENOENT
@@ -130,6 +150,13 @@ export function applyPreflight(cfg: EngineConfig, pf: EnginePreflight): EngineCo
 }
 
 export function logEnginePreflight(pf: EnginePreflight, cfg: EngineConfig): void {
+  const versions = [
+    pf.rhwp.available && pf.rhwp.version ? `rhwp ${pf.rhwp.version}` : null,
+    pf.rhwpCli.available && pf.rhwpCli.version ? `rhwp-cli ${pf.rhwpCli.version}` : null,
+  ].filter((v): v is string => v !== null);
+  if (versions.length > 0) {
+    console.log(`engine preflight: detected ${versions.join(", ")}`);
+  }
   if (cfg.rhwp.enabled && !pf.rhwp.available) {
     console.warn(
       `engine preflight: rhwp unavailable — ${pf.rhwp.reason ?? "unknown"} (excluded from conversion chains)`,
