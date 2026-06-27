@@ -152,7 +152,8 @@ const hwpPrecise: Converter[] = [
 | 증상 | 복잡한 중첩 표 문서(14KB) 변환 실패 (`status='failed'`) |
 | 원인 | rhwp 표 레이아웃 오버플로우 처리 한계 (`type=PartialTable, bottom=0.0`) |
 | 재테스트 (2026-06-26) | **rhwp-python 0.8.0(core 0.7.16)에서도 동일 실패** — 0.7.0(core 0.7.13)과 같은 `PartialTable LAYOUT_OVERFLOW`. 0.8.0 업그레이드로 해결되지 않음 (실측: 워커로 직접 변환) |
-| 해결 조건 | 상류 rhwp의 PartialTable 렌더 수정(0.7.16 이후 미해결) OR Hancom sidecar 엔진 활성화 |
+| 상류 리포트 | edwardkim/rhwp#1583 — 모든 블록 타입이 `bottom=0.0`(본문 영역 높이=0 가설). rhwp-cli v0.7.17에서도 재현. 초안: `docs/upstream/rhwp-partialtable-overflow-issue.md` |
+| 해결 조건 | 상류 rhwp의 본문 높이 산정 수정(#1583) OR Hancom sidecar 엔진 활성화 |
 | 임시 대응 | 사용자에게 `status='failed'` + 상세 에러 메시지 표시. 수동 변환 안내 |
 | 영향 범위 | 복잡한 표 레이아웃이 포함된 HWP 문서에 한정 |
 
