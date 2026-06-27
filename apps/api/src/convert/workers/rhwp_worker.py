@@ -19,8 +19,14 @@ def _emit(payload: dict[str, str | int]) -> None:
 
 
 def _apply_font_paths(rhwp) -> str | None:
-    """Best-effort: rhwp-python's font API differs across versions, so try the
-    known entry points guarded by hasattr and report which one applied."""
+    """Best-effort, forward-compat probe for a rhwp-python font API.
+
+    NOTE: as of rhwp-python 0.7.0/0.8.0 none of these entry points exist and the
+    native core does NOT read the RHWP_FONT_PATHS env var. Fonts are resolved by
+    the core from a `ttfs/<provider>` directory relative to the process cwd (the
+    caller symlinks fonts into `ttfs/hwp/`; see engines/rhwp.ts) plus the system
+    fontconfig path. This probe stays only so a future wheel that adds an
+    explicit font API is picked up automatically."""
     raw = os.environ.get("RHWP_FONT_PATHS", "")
     paths = [p for p in (s.strip() for s in raw.split(":")) if p]
     if not paths:
@@ -82,7 +88,11 @@ def main(argv: list[str]) -> int:
         )
     elif os.environ.get("RHWP_FONT_PATHS", "").strip():
         print(
-            json.dumps({"info": "font paths set in env only (no rhwp font API found)"}),
+            json.dumps(
+                {
+                    "info": "no rhwp font API; fonts resolve via ttfs/hwp cwd symlinks + fontconfig (RHWP_FONT_PATHS is informational only)"
+                }
+            ),
             file=sys.stderr,
         )
 

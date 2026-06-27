@@ -27,12 +27,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       fonts-nanum fonts-noto-cjk \
     && rm -rf /var/lib/apt/lists/* \
     && python3 -m venv /opt/rhwp \
-    && /opt/rhwp/bin/pip install --no-cache-dir rhwp-python==0.7.0 \
-    # rhwp-python 0.7.0's manylinux wheel bundles a freetype that predates
+    && /opt/rhwp/bin/pip install --no-cache-dir rhwp-python==0.8.0 \
+    # rhwp-python's manylinux wheel bundles a freetype that predates
     # FT_Palette_Select, so `import rhwp` dies with `undefined symbol:
     # FT_Palette_Select`. Repoint the bundled lib at the distro freetype (2.12,
     # which exports the symbol). Without this the precision engine silently
-    # never loads and every HWP job falls back to H2Orestart.
+    # never loads and every HWP job falls back to H2Orestart. 0.8.0 still ships
+    # the byte-identical libfreetype-c0e61f0c.so.6 as 0.7.0, so this stays
+    # necessary and the glob below still matches — re-verify on the next bump.
     && SYS_FT="$(ls /usr/lib/*/libfreetype.so.6 | head -1)" \
     && find /opt/rhwp -path '*/rhwp_python.libs/libfreetype-*.so.6' \
          -exec ln -sf "$SYS_FT" {} +

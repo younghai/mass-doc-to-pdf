@@ -20,16 +20,28 @@ function enoent(message: string): Error {
 
 describe("probeEngines", () => {
   it("marks every engine available when the runner resolves", async () => {
-    const run: ProbeRunner = async () => undefined;
+    const run: ProbeRunner = async () => "";
     const pf = await probeEngines(base, run);
     expect(pf.rhwp.available).toBe(true);
     expect(pf.rhwpCli.available).toBe(true);
     expect(pf.builtin.available).toBe(true);
   });
 
+  it("captures engine versions from stdout", async () => {
+    const run: ProbeRunner = async (file, args) => {
+      if (file === base.rhwp.pythonPath && args.some((a) => a.includes("import rhwp"))) return "0.7.3";
+      if (file === base.rhwpCli.cliPath) return "rhwp v0.7.17";
+      return "";
+    };
+    const pf = await probeEngines(base, run);
+    expect(pf.rhwp.version).toBe("0.7.3");
+    expect(pf.rhwpCli.version).toBe("v0.7.17");
+  });
+
   it("flags rhwp unavailable with the python path when the interpreter is missing", async () => {
     const run: ProbeRunner = async (file) => {
       if (file === base.rhwp.pythonPath) throw enoent("spawn python3 ENOENT");
+      return "";
     };
     const pf = await probeEngines(base, run);
     expect(pf.rhwp.available).toBe(false);
@@ -38,12 +50,13 @@ describe("probeEngines", () => {
 
   it("flags rhwp unavailable on a module import error", async () => {
     const run: ProbeRunner = async (file, args) => {
-      if (file === base.rhwp.pythonPath && args.includes("import rhwp")) {
+      if (file === base.rhwp.pythonPath && args.some((a) => a.includes("import rhwp"))) {
         throw Object.assign(new Error("Command failed"), {
           code: 1,
           stderr: "ModuleNotFoundError: No module named 'rhwp'\n",
         });
       }
+      return "";
     };
     const pf = await probeEngines(base, run);
     expect(pf.rhwp.available).toBe(false);
@@ -53,6 +66,7 @@ describe("probeEngines", () => {
   it("treats rhwp-cli asymmetrically: ENOENT unavailable, other errors available", async () => {
     const enoentRun: ProbeRunner = async (file) => {
       if (file === base.rhwpCli.cliPath) throw enoent("spawn rhwp ENOENT");
+      return "";
     };
     const enoentPf = await probeEngines(base, enoentRun);
     expect(enoentPf.rhwpCli.available).toBe(false);
@@ -62,6 +76,7 @@ describe("probeEngines", () => {
       if (file === base.rhwpCli.cliPath) {
         throw Object.assign(new Error("Command failed"), { code: 2, stderr: "unknown flag --version" });
       }
+      return "";
     };
     const noVersionPf = await probeEngines(base, noVersionRun);
     expect(noVersionPf.rhwpCli.available).toBe(true);
@@ -70,6 +85,7 @@ describe("probeEngines", () => {
   it("flags builtin unavailable when chrome is missing (exit 3)", async () => {
     const run: ProbeRunner = async (file) => {
       if (file === "python3") throw Object.assign(new Error("Command failed: exit 3"), { code: 3 });
+      return "";
     };
     const pf = await probeEngines(base, run);
     expect(pf.builtin.available).toBe(false);
@@ -77,7 +93,7 @@ describe("probeEngines", () => {
   });
 
   it("never invokes the runner for disabled engines", async () => {
-    const run = vi.fn<ProbeRunner>(async () => undefined);
+    const run = vi.fn<ProbeRunner>(async () => "");
     const disabled: EngineConfig = {
       ...base,
       rhwp: { ...base.rhwp, enabled: false },
