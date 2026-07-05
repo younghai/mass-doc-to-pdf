@@ -1,5 +1,5 @@
 import { vi } from "vitest";
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, fireEvent } from "@testing-library/react";
 import { Routes, Route } from "react-router-dom";
 import { renderWithProviders } from "../test/render";
 import { JobDetail } from "./JobDetail";
@@ -8,7 +8,7 @@ import type { JobDTO, QualityReport } from "@hwptopdf/shared";
 
 vi.mock("../api/client", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../api/client")>();
-  return { ...actual, api: { ...actual.api, getJob: vi.fn(), getQualityReport: vi.fn() } };
+  return { ...actual, api: { ...actual.api, getJob: vi.fn(), getQualityReport: vi.fn(), deleteJob: vi.fn() } };
 });
 
 const job = (over: Partial<JobDTO>): JobDTO => ({
@@ -112,4 +112,29 @@ test("running job shows progress guidance and no download link", async () => {
   renderDetail();
   await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent(/진행 중/));
   expect(screen.queryByRole("link", { name: /다운로드/ })).not.toBeInTheDocument();
+});
+
+test("delete asks for confirmation and does nothing when the user declines", async () => {
+  vi.mocked(api.deleteJob).mockClear();
+  vi.mocked(api.getJob).mockResolvedValue(job({ status: "failed", error: "boom" }));
+  vi.mocked(api.getQualityReport).mockResolvedValue(null);
+  const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+  renderDetail();
+  const delBtn = await screen.findByRole("button", { name: "삭제" });
+  fireEvent.click(delBtn);
+  expect(confirmSpy).toHaveBeenCalled();
+  expect(api.deleteJob).not.toHaveBeenCalled();
+  confirmSpy.mockRestore();
+});
+
+test("delete proceeds when the user confirms", async () => {
+  vi.mocked(api.deleteJob).mockClear();
+  vi.mocked(api.getJob).mockResolvedValue(job({ status: "failed", error: "boom" }));
+  vi.mocked(api.getQualityReport).mockResolvedValue(null);
+  const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+  renderDetail();
+  const delBtn = await screen.findByRole("button", { name: "삭제" });
+  fireEvent.click(delBtn);
+  await waitFor(() => expect(api.deleteJob).toHaveBeenCalledWith("1"));
+  confirmSpy.mockRestore();
 });
