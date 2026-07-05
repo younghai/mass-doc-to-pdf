@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { JobDTO } from "@hwptopdf/shared";
 import { api } from "../api/client";
+import { confirmDelete } from "../confirm";
 import { StatusPill } from "./StatusPill";
 import { humanSize, formatDate } from "../format";
 
@@ -47,7 +48,7 @@ function JobRow({ j }: { j: JobDTO }) {
         <button
           className="btn-link danger"
           type="button"
-          onClick={() => deleteMutation.mutate()}
+          onClick={() => { if (confirmDelete(j.filename)) deleteMutation.mutate(); }}
           disabled={deleteMutation.isPending}
         >
           삭제
