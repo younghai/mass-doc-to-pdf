@@ -6,6 +6,18 @@ server {
   index index.html;
   client_max_body_size 20m;
 
+  # Security headers (SEC-02). `always` sends them on error responses too. Set once
+  # at server scope; neither location defines its own add_header, so nginx inherits
+  # these into both. HSTS only takes effect once TLS terminates (here or upstream)
+  # and is ignored over plain HTTP. The CSP is tight because the SPA loads no
+  # external scripts/fonts — only same-origin bundles, blob/data previews,
+  # recorded-audio blobs, and the Google OAuth avatar.
+  add_header X-Frame-Options "DENY" always;
+  add_header X-Content-Type-Options "nosniff" always;
+  add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+  add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+  add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://lh3.googleusercontent.com; media-src 'self' blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'self'" always;
+
   location /api/ {
     proxy_pass http://127.0.0.1:__API_PORT__;
     proxy_set_header Host $host;
