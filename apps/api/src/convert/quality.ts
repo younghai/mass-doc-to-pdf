@@ -254,6 +254,20 @@ export function buildQualityReport(input: {
   };
 }
 
+// Quality gate: an office document converted in precise mode that only reached a
+// fallback engine (builtin text extraction) has lost its original layout, so the
+// PDF must not be published as a success. Both conversion paths — the inline
+// /api/convert handler and the durable queue worker — MUST consume this single
+// predicate; keeping a private copy in one path is what let the two paths grade
+// the same file differently.
+export function shouldRejectQuality(report: QualityReport): boolean {
+  return report.format === "office" && report.mode === "precise" && report.grade === "fallback";
+}
+
+export function qualityGateReason(report: QualityReport): string {
+  return `품질 게이트 실패: ${report.recommendedAction ?? "원본 서식 보존 엔진으로 재시도하세요."}`;
+}
+
 export function normalizeQualityReport(input: {
   readonly report: QualityReport | undefined;
   readonly jobId: string;

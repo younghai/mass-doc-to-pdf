@@ -156,6 +156,47 @@ describe("runWorkerOnce", () => {
     const row = await db.prisma.conversionJob.findUnique({ where: { id } });
     expect(row?.attempts).toBe(1);
   });
+
+  it("fails a job when the quality gate rejects it (office+precise+fallback) without burning retries", async () => {
+    const storage = new MemoryStorage();
+    const queue = new JobQueue(db.prisma);
+    // builtin-office grades as "fallback"; an office doc in precise mode trips the
+    // gate. The queue path must fail this deterministically, exactly like the
+    // inline /api/convert path does — not silently store a PDF and mark success.
+    const engine: Converter = { name: "builtin-office", async convert() { return Buffer.from("%PDF-1.7"); } };
+    const deps: WorkerRuntimeDeps = { registry: registryWith(engine), storage, jobs, queue };
+
+    const sourceKey = `${userId}/src/a.docx`;
+    await storage.put(sourceKey, Buffer.from("docx-bytes"));
+    const job = await db.prisma.conversionJob.create({
+      data: {
+        userId,
+        filename: "a.docx",
+        format: "office",
+        extension: "docx",
+        mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        sizeBytes: 10,
+        sourceKey,
+        qualityMode: "precise",
+        status: "pending",
+      },
+    });
+    await queue.enqueue(job.id);
+
+    expect(await runWorkerOnce(deps, "w")).toBe(true);
+
+    const done = await jobs.get(userId, job.id);
+    expect(done?.status).toBe("failed");
+    expect(done?.error).toMatch(/품질 게이트/);
+
+    // A deterministic gate rejection must not burn the retry budget or publish a PDF,
+    // but the report is still persisted so the job detail can explain the verdict.
+    const row = await db.prisma.conversionJob.findUnique({ where: { id: job.id } });
+    expect(row?.attempts).toBe(0);
+    expect(row?.lockedAt).toBeNull();
+    expect(storage.map.has(`${userId}/out/${job.id}.pdf`)).toBe(false);
+    expect(storage.map.has(`${userId}/report/${job.id}.json`)).toBe(true);
+  });
 });
 
 describe("processConversion", () => {

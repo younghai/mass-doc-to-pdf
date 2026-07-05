@@ -1,5 +1,11 @@
-import { normalizeQualityReport, previewObjectKey, reportObjectKey } from "../convert/quality.js";
-import { isReportingConverter, type ConversionResult } from "../convert/types.js";
+import {
+  normalizeQualityReport,
+  previewObjectKey,
+  qualityGateReason,
+  reportObjectKey,
+  shouldRejectQuality,
+} from "../convert/quality.js";
+import { ConversionError, isReportingConverter, type ConversionResult } from "../convert/types.js";
 import { errorMessage as localizedErrorMessage } from "../convert/failure.js";
 import { defaultPreviewRenderer, type PdfPreviewRenderer } from "../pdf/preview.js";
 import type { Registry } from "../convert/registry.js";
@@ -51,6 +57,26 @@ export async function processConversion(deps: WorkerDeps, job: QueuedJob): Promi
       sourceBytes: data.byteLength,
       durationMs,
     });
+
+    // Quality gate — shared with the inline /api/convert path via shouldRejectQuality.
+    // A rejected report means the PDF lost the original layout, so it must not be
+    // published as a success. Persist the report so the job detail can explain the
+    // verdict, then fail deterministically. The error is classified as
+    // quality_gate_failed → isPermanentFailure() → the worker fails it immediately
+    // instead of burning the retry budget re-running the identical engine chain.
+    if (shouldRejectQuality(report)) {
+      await deps.storage.put(
+        reportObjectKey(job.userId, job.id),
+        Buffer.from(JSON.stringify(report)),
+        "application/json",
+      );
+      return {
+        ok: false,
+        engine: report.selectedEngine,
+        durationMs,
+        error: localizedErrorMessage(new ConversionError(report.selectedEngine, qualityGateReason(report))),
+      };
+    }
 
     const outputKey = `${job.userId}/out/${job.id}.pdf`;
     await deps.storage.put(outputKey, result.pdf, "application/pdf");
