@@ -62,6 +62,7 @@ const app = buildApp({
   webOrigin: cfg.webOrigin,
   logger: { level: process.env.LOG_LEVEL ?? "info" },
   rateLimitMax: Number(process.env.RATE_LIMIT_MAX ?? 300),
+  trustProxy: cfg.trustProxy,
   enginePreflight: preflight,
   engineEndpoints: { hwpSidecarUrl: cfg.engines.hwpSidecarUrl, gotenbergUrl: cfg.engines.gotenbergUrl },
   getSessionUser: (req) => app.getSessionUser(req),

@@ -32,6 +32,8 @@ export interface AppDeps {
   logger?: FastifyServerOptions["logger"];
   /** Per-IP request ceiling per minute (default 300). */
   rateLimitMax?: number;
+  /** How much of the X-Forwarded-For chain to trust (default: 1 hop = single nginx). */
+  trustProxy?: boolean | number;
   /** Boot-time local-engine probe results, surfaced by GET /health/engines. */
   enginePreflight?: EnginePreflight;
   /** Network-engine URLs, live-probed on each GET /health/engines request. */
@@ -58,10 +60,17 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     logger: deps.logger ?? false,
     // nginx terminates TLS and forwards X-Forwarded-Proto/-For. Trusting it keeps
     // req.protocol and req.ip correct for Auth.js callback URLs, Secure cookies,
-    // and per-IP rate limiting. Deployments never expose the API port directly.
-    trustProxy: true,
+    // and per-IP rate limiting. We trust a bounded number of hops (default 1) rather
+    // than the whole chain, so a client can't spoof X-Forwarded-For to defeat the
+    // per-IP rate limit. Deployments never expose the API port directly.
+    trustProxy: deps.trustProxy ?? 1,
   });
-  app.register(multipart, { limits: { fileSize: MAX_UPLOAD_BYTES } });
+  // Bound the multipart request: /api/convert consumes a single file via req.file().
+  // Capping files/fields/parts stops a request with thousands of parts from tying up
+  // the parser as a cheap DoS (fileSize alone doesn't limit part count).
+  app.register(multipart, {
+    limits: { fileSize: MAX_UPLOAD_BYTES, files: 1, fields: 8, parts: 12 },
+  });
   app.register(rateLimit, {
     max: deps.rateLimitMax ?? 300,
     timeWindow: "1 minute",

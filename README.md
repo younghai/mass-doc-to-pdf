@@ -172,6 +172,7 @@ cp .env.example .env
 | `LOG_LEVEL` | `info` | `debug` / `info` / `warn` / `error` |
 | `RATE_LIMIT_MAX` | `300` | 분당 전체 요청 한도 |
 | `AUTH_RATE_LIMIT_MAX` | `60` | 분당 인증 엔드포인트 한도 |
+| `TRUST_PROXY` | `1` | 신뢰할 X-Forwarded-For 홉 수. `0`=끔, `N`=N홉, `true`=전체 체인(다단 프록시 opt-in) |
 
 ```bash
 openssl rand -base64 32
@@ -294,7 +295,7 @@ RUN_E2E=1 pnpm test
 - 대량 batch 운영 전에는 실제 HWP/HWPX 샘플 50개 또는 100개 이상으로 품질 코퍼스 리포트를 먼저 생성해야 합니다.
 - 운영 DB migration과 production DB 명령은 별도 승인과 rollback 계획 없이 자동 실행하지 않습니다.
 - `USE_QUEUE=1` 환경 변수가 없으면 인라인 모드(API 프로세스에서 즉시 변환)로 동작합니다. 운영 환경에서는 반드시 `USE_QUEUE=1`을 설정하고 worker 프로세스를 별도로 실행해야 합니다.
-- nginx 뒤에 배포할 때는 Fastify `trustProxy: true`가 기본 활성화돼 있습니다. `X-Forwarded-Proto`를 전달하지 않는 프록시 구성이라면 `TRUST_PROXY=0`으로 끄세요.
+- nginx 뒤에 배포할 때는 Fastify `trustProxy`가 **기본 1홉**(단일 리버스 프록시)으로 켜져 있습니다. 전체 `X-Forwarded-For` 체인을 신뢰하면 클라이언트가 IP를 위조해 IP별 rate limit을 우회할 수 있어 기본값을 1홉으로 제한했습니다. 프록시가 2단이면 `TRUST_PROXY=<홉수>`, 프록시가 없으면 `TRUST_PROXY=0`으로 끄세요.
 
 ## 2026-06-11 보안 및 안정성 강화
 
