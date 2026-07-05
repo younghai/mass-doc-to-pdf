@@ -2,7 +2,13 @@ import type { FastifyInstance } from "fastify";
 import type { ConversionMode, DocFormat, QualityReport } from "@hwptopdf/shared";
 import { randomUUID } from "node:crypto";
 import { fileMeta } from "../detect/detectFormat.js";
-import { normalizeQualityReport, previewObjectKey, reportObjectKey } from "../convert/quality.js";
+import {
+  normalizeQualityReport,
+  previewObjectKey,
+  qualityGateReason,
+  reportObjectKey,
+  shouldRejectQuality,
+} from "../convert/quality.js";
 import { errorMessage } from "../convert/failure.js";
 import { defaultPreviewRenderer } from "../pdf/preview.js";
 import {
@@ -15,12 +21,8 @@ import type { AppDeps } from "../app.js";
 
 class QualityGateError extends ConversionError {
   constructor(public readonly report: QualityReport) {
-    super(report.selectedEngine, `품질 게이트 실패: ${report.recommendedAction ?? "원본 서식 보존 엔진으로 재시도하세요."}`);
+    super(report.selectedEngine, qualityGateReason(report));
   }
-}
-
-function shouldRejectQuality(report: QualityReport): boolean {
-  return report.format === "office" && report.mode === "precise" && report.grade === "fallback";
 }
 
 function parseQualityMode(value: string | undefined): ConversionMode {
