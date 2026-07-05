@@ -33,11 +33,13 @@ jobs:
 
       - name: Prepare SSH key and environment file
         run: |
+          umask 077
           mkdir -p ~/.ssh
           printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H "${{ secrets.DEPLOY_HOST }}" >> ~/.ssh/known_hosts
           printf '%s\n' "${{ secrets.PRODUCTION_ENV }}" > .env.production
+          chmod 600 .env.production
 
       - name: Copy deployment files
         run: |
@@ -45,20 +47,31 @@ jobs:
             "mkdir -p '${{ secrets.DEPLOY_PATH }}'"
           scp -i ~/.ssh/deploy_key docker-compose.prod.yml .env.production \
             "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:${{ secrets.DEPLOY_PATH }}/"
+          ssh -i ~/.ssh/deploy_key "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
+            "chmod 600 '${{ secrets.DEPLOY_PATH }}/.env.production'"
 
       - name: Pull and restart stack
+        env:
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+          GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
         run: |
-          ssh -i ~/.ssh/deploy_key "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" <<'REMOTE'
+          TARGET="${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}"
+          # Log in to GHCR by piping the token over ssh stdin. The token never lands
+          # on the remote process's command line (/proc/<pid>/cmdline) or in shell
+          # history the way an interpolated literal inside the heredoc did.
+          if [ -n "${GHCR_TOKEN:-}" ]; then
+            printf '%s' "$GHCR_TOKEN" \
+              | ssh -i ~/.ssh/deploy_key "$TARGET" \
+                  "docker login ghcr.io -u '$GHCR_USERNAME' --password-stdin"
+          fi
+          # The compose steps carry no secrets, so a fixed remote script is safe.
+          ssh -i ~/.ssh/deploy_key "$TARGET" <<'REMOTE'
           set -eu
           cd '${{ secrets.DEPLOY_PATH }}'
           if docker compose version >/dev/null 2>&1; then
             COMPOSE="docker compose"
           else
             COMPOSE="docker-compose"
-          fi
-          if [ -n '${{ secrets.GHCR_TOKEN }}' ]; then
-            printf '%s\n' '${{ secrets.GHCR_TOKEN }}' | docker login ghcr.io \
-              -u '${{ secrets.GHCR_USERNAME }}' --password-stdin
           fi
           export HWPTOPDF_IMAGE_TAG='${{ inputs.image_tag }}'
           $COMPOSE --env-file .env.production -f docker-compose.prod.yml pull
