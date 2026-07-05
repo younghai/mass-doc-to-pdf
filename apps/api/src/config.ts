@@ -88,6 +88,8 @@ export interface AppConfig {
   port: number;
   /** Fastify trustProxy: how much of the X-Forwarded-For chain to trust. */
   trustProxy: boolean | number;
+  /** Max concurrent (pending/running) jobs a single user may hold before 429. */
+  maxActiveJobsPerUser: number;
 }
 
 /**
@@ -147,5 +149,6 @@ export function loadAppConfig(env: NodeJS.ProcessEnv): AppConfig {
     webOrigin: env.WEB_ORIGIN ?? "http://localhost:5173",
     port: Number(env.PORT ?? 8000),
     trustProxy: parseTrustProxy(env),
+    maxActiveJobsPerUser: Number(env.MAX_ACTIVE_JOBS_PER_USER ?? 50),
   };
 }

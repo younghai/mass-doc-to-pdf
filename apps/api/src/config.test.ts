@@ -173,4 +173,14 @@ describe("loadAppConfig", () => {
       expect(loadAppConfig({ AUTH_SECRET: "s", TRUST_PROXY: "yes-please" }).trustProxy).toBe(1);
     });
   });
+
+  describe("maxActiveJobsPerUser", () => {
+    it("defaults the per-user active-job ceiling to 50", () => {
+      expect(loadAppConfig({ AUTH_SECRET: "s" }).maxActiveJobsPerUser).toBe(50);
+    });
+
+    it("reads the ceiling from MAX_ACTIVE_JOBS_PER_USER", () => {
+      expect(loadAppConfig({ AUTH_SECRET: "s", MAX_ACTIVE_JOBS_PER_USER: "10" }).maxActiveJobsPerUser).toBe(10);
+    });
+  });
 });

@@ -34,6 +34,8 @@ export interface AppDeps {
   rateLimitMax?: number;
   /** How much of the X-Forwarded-For chain to trust (default: 1 hop = single nginx). */
   trustProxy?: boolean | number;
+  /** Max concurrent jobs a user may hold before /api/convert returns 429 (default 50). */
+  maxActiveJobsPerUser?: number;
   /** Boot-time local-engine probe results, surfaced by GET /health/engines. */
   enginePreflight?: EnginePreflight;
   /** Network-engine URLs, live-probed on each GET /health/engines request. */
