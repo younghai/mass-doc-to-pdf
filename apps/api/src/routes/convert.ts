@@ -109,9 +109,9 @@ async function finishConversion(
   }
 }
 
-const MAX_ACTIVE_JOBS_PER_USER = Number(process.env.MAX_ACTIVE_JOBS_PER_USER ?? 50);
-
 export function registerConvert(app: FastifyInstance, deps: AppDeps) {
+  const maxActiveJobsPerUser = deps.maxActiveJobsPerUser ?? 50;
+
   app.post("/api/jobs/:id/retry", async (req, reply) => {
     const user = await deps.getSessionUser(req);
     if (!user) return reply.code(401).send({ error: "unauthenticated" });
@@ -139,7 +139,7 @@ export function registerConvert(app: FastifyInstance, deps: AppDeps) {
     if (!user) return reply.code(401).send({ error: "unauthenticated" });
 
     const activeCount = await deps.jobs.countActive(user.id);
-    if (activeCount >= MAX_ACTIVE_JOBS_PER_USER) {
+    if (activeCount >= maxActiveJobsPerUser) {
       return reply.code(429).send({ error: "변환 대기 한도 초과. 완료된 작업을 확인 후 재시도하세요." });
     }
 
