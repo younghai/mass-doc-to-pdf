@@ -80,6 +80,16 @@ describe("loadEngineConfig", () => {
     expect(cfg.officeEngine).toBe("builtin");
   });
 
+  it("defaults the builtin engine timeout to 120000ms", () => {
+    const cfg = loadEngineConfig({});
+    expect(cfg.builtinTimeoutMs).toBe(120_000);
+  });
+
+  it("reads the builtin engine timeout from BUILTIN_TIMEOUT_MS", () => {
+    const cfg = loadEngineConfig({ BUILTIN_TIMEOUT_MS: "90000" });
+    expect(cfg.builtinTimeoutMs).toBe(90_000);
+  });
+
   it("includes commercial config only when fully specified", () => {
     const cfg = loadEngineConfig({
       HANCOM_BASE_URL: "http://hancom",
