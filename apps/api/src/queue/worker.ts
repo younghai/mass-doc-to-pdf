@@ -32,6 +32,7 @@ export async function runWorkerOnce(deps: WorkerRuntimeDeps, workerId: string): 
     await deps.queue.release(job.id);
     await deps.jobs.markFailed(job.id, {
       engine: result.engine,
+      qualityStatus: result.qualityStatus,
       durationMs: result.durationMs,
       error: result.error,
     });
@@ -42,6 +43,7 @@ export async function runWorkerOnce(deps: WorkerRuntimeDeps, workerId: string): 
   if (!willRetry) {
     await deps.jobs.markFailed(job.id, {
       engine: result.engine,
+      qualityStatus: result.qualityStatus,
       durationMs: result.durationMs,
       error: result.error,
     });
@@ -88,7 +90,7 @@ export async function runWorkerLoop(deps: WorkerRuntimeDeps, opts: WorkerLoopOpt
       // A single poisoned job or a transient DB/storage outage must not kill
       // the worker: exiting puts systemd/compose into a claim -> crash ->
       // restart loop on the same job. Log, back off, keep serving the queue.
-      console.error(`worker ${opts.workerId} iteration failed:`, err);
+      console.error(`worker ${opts.workerId} iteration failed:`, err instanceof Error ? err : String(err));
       await wait(errorBackoffMs);
     }
   }

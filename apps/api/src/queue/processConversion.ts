@@ -12,6 +12,7 @@ import type { Registry } from "../convert/registry.js";
 import type { Storage } from "../storage/s3.js";
 import type { JobService } from "../jobs/jobService.js";
 import type { QueuedJob } from "./jobQueue.js";
+import type { QualityStatus } from "@hwptopdf/shared";
 
 export interface WorkerDeps {
   readonly registry: Registry;
@@ -25,6 +26,7 @@ export type ProcessResult =
   | {
       readonly ok: false;
       readonly engine: string;
+      readonly qualityStatus: QualityStatus;
       readonly durationMs: number;
       readonly error: string;
       readonly permanent: boolean;
@@ -85,6 +87,7 @@ export async function processConversion(deps: WorkerDeps, job: QueuedJob): Promi
       return {
         ok: false,
         engine: report.selectedEngine,
+        qualityStatus: report.status,
         durationMs,
         error: localizedErrorMessage(err),
         permanent: isPermanentFailure(rawErrorMessage(err)),
@@ -105,23 +108,27 @@ export async function processConversion(deps: WorkerDeps, job: QueuedJob): Promi
       const renderer = deps.pdfPreview ?? defaultPreviewRenderer();
       const png = await renderer.renderFirstPagePng(result.pdf);
       await deps.storage.put(previewObjectKey(job.userId, job.id), png, "image/png");
-    } catch {
-      // best-effort only
+    } catch (err) {
+      const rawError = err instanceof Error ? err.message : rawErrorMessage(err);
+      console.warn("worker preview pre-render failed", { jobId: job.id, rawError });
     }
     await deps.jobs.markSuccess(job.id, {
       engine: report.selectedEngine,
+      qualityStatus: report.status,
       durationMs,
       outputKey,
     });
     return { ok: true, engine: report.selectedEngine, durationMs };
   } catch (err) {
+    const rawError = err instanceof Error ? err.message : rawErrorMessage(err);
     logRawConversionFailure(job.id, err);
     return {
       ok: false,
       engine: engineName,
+      qualityStatus: "failed",
       durationMs: Date.now() - started,
       error: localizedErrorMessage(err),
-      permanent: isPermanentFailure(rawErrorMessage(err)),
+      permanent: isPermanentFailure(rawError),
     };
   }
 }

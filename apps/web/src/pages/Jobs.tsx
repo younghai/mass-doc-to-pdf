@@ -1,23 +1,37 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { JobStatus } from "@hwptopdf/shared";
-import { api } from "../api/client";
+import { api, type JobListFilters } from "../api/client";
 import { JobsTable } from "../components/JobsTable";
 
-const TABS: { key: "all" | JobStatus; label: string }[] = [
+type JobsTabKey = "all" | JobStatus | "quality-review";
+
+const TABS: { readonly key: JobsTabKey; readonly label: string }[] = [
   { key: "all", label: "전체" },
   { key: "running", label: "진행 중" },
   { key: "pending", label: "대기" },
   { key: "success", label: "성공" },
   { key: "failed", label: "실패" },
+  { key: "quality-review", label: "저품질(review)" },
 ];
 
+function filtersFor(tab: JobsTabKey): JobListFilters {
+  switch (tab) {
+    case "all":
+      return {};
+    case "quality-review":
+      return { status: "success", qualityStatus: "review" };
+    default:
+      return { status: tab };
+  }
+}
+
 export function Jobs() {
-  const [tab, setTab] = useState<"all" | JobStatus>("all");
-  const status = tab === "all" ? undefined : tab;
+  const [tab, setTab] = useState<JobsTabKey>("all");
+  const filters = filtersFor(tab);
   const { data, isLoading } = useQuery({
     queryKey: ["jobs", tab],
-    queryFn: () => api.listJobs(status),
+    queryFn: () => api.listJobs(filters),
     refetchInterval: 2_000,
   });
 

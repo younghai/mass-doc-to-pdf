@@ -79,6 +79,7 @@ describe("runWorkerOnce", () => {
     const job = await jobs.get(userId, id);
     expect(job?.status).toBe("success");
     expect(job?.engine).toBe("rhwp");
+    expect(job?.qualityStatus).toBe("review");
     expect(storage.map.has(`${userId}/out/${id}.pdf`)).toBe(true);
     expect(storage.map.has(`${userId}/report/${id}.json`)).toBe(true);
     // The first-page PNG is pre-rendered at conversion time for the preview route.
@@ -230,6 +231,7 @@ describe("runWorkerOnce", () => {
     // A deterministic gate rejection must not burn the retry budget or publish a PDF,
     // but the report is still persisted so the job detail can explain the verdict.
     const row = await db.prisma.conversionJob.findUnique({ where: { id: job.id } });
+    expect(row?.qualityStatus).toBe("review");
     expect(row?.attempts).toBe(0);
     expect(row?.lockedAt).toBeNull();
     expect(storage.map.has(`${userId}/out/${job.id}.pdf`)).toBe(false);
@@ -274,14 +276,13 @@ describe("runWorkerLoop", () => {
     // Iteration 1 throws (transient DB/storage outage); later iterations return
     // null so the loop idles. A crash here would mimic the systemd/compose
     // claim -> crash -> restart loop the catch is meant to prevent.
-    const queue = {
-      async claimNext() {
-        claimCalls += 1;
-        if (claimCalls === 1) throw new Error("transient db outage");
-        return null;
-      },
-      async requeueStale() { return 0; },
-    } as unknown as JobQueue;
+    const queue = new JobQueue(db.prisma);
+    queue.claimNext = async () => {
+      claimCalls += 1;
+      if (claimCalls === 1) throw new Error("transient db outage");
+      return null;
+    };
+    queue.requeueStale = async () => 0;
     const engine: Converter = { name: "x", async convert() { return Buffer.from(""); } };
     const deps: WorkerRuntimeDeps = { registry: registryWith(engine), storage: new MemoryStorage(), jobs, queue };
 

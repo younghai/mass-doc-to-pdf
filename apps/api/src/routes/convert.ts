@@ -89,11 +89,13 @@ async function finishConversion(
       const renderer = deps.pdfPreview ?? defaultPreviewRenderer();
       const png = await renderer.renderFirstPagePng(result.pdf);
       await deps.storage.put(previewObjectKey(input.userId, input.jobId), png, "image/png");
-    } catch {
-      // best-effort only
+    } catch (err) {
+      const rawError = err instanceof Error ? err.message : rawErrorMessage(err);
+      console.warn("preview pre-render failed", { jobId: input.jobId, rawError });
     }
     await deps.jobs.markSuccess(input.jobId, {
       engine: report.selectedEngine,
+      qualityStatus: report.status,
       durationMs,
       outputKey,
     });
@@ -108,6 +110,7 @@ async function finishConversion(
     logRawConversionFailure(input.jobId, err);
     await deps.jobs.markFailed(input.jobId, {
       engine: err instanceof QualityGateError ? err.report.selectedEngine : input.engine.name,
+      qualityStatus: err instanceof QualityGateError ? err.report.status : "failed",
       durationMs: Date.now() - started,
       error: errorMessage(err),
     });
@@ -156,8 +159,9 @@ export function registerConvert(app: FastifyInstance, deps: AppDeps) {
     let meta;
     try {
       meta = fileMeta(file.filename, data.subarray(0, 8));
-    } catch (e) {
-      return reply.code(400).send({ error: (e as Error).message });
+    } catch (err) {
+      if (err instanceof Error) return reply.code(400).send({ error: err.message });
+      throw err;
     }
 
     const sourceKey = sourceObjectKey(user.id, meta.extension);
