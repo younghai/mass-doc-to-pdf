@@ -91,7 +91,7 @@ p {
 }
 
 .site-nav nav,
-.topbar nav {
+.topbar-nav {
   display: flex;
   align-items: center;
   gap: 1.1rem;
@@ -337,14 +337,43 @@ p {
   font-size: 1.05rem;
 }
 
-.topbar nav a {
+.topbar-toggle {
+  display: none;
+  place-content: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  padding: 0;
+  border: 1px solid var(--surface-2);
+  border-radius: 0.6rem;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  flex-shrink: 0;
+  grid-template-rows: repeat(3, 2px);
+  gap: 0.28rem;
+}
+
+.topbar-toggle span {
+  display: block;
+  width: 1.1rem;
+  height: 2px;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.topbar-toggle:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.topbar-nav a {
   color: var(--muted);
   font-size: 0.92rem;
   padding: 0.72rem 0;
   border-bottom: 2px solid transparent;
 }
 
-.topbar nav a.active {
+.topbar-nav a.active {
   color: var(--primary);
   border-bottom-color: var(--primary);
   font-weight: 700;
@@ -1527,14 +1556,46 @@ p {
     gap: 0.75rem;
   }
 
-  .topbar nav {
+  .topbar-toggle {
+    display: inline-grid;
+    margin-left: auto;
+  }
+
+  .topbar-nav {
+    display: none;
     order: 3;
     width: 100%;
-    overflow-x: auto;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.35rem;
+    padding: 0.75rem;
+    border: 1px solid var(--surface-2);
+    border-radius: 0.75rem;
+    background: var(--surface);
+    box-shadow: var(--shadow);
+  }
+
+  .topbar-nav.is-open {
+    display: flex;
+  }
+
+  .topbar-nav a {
+    display: block;
+    padding: 0.85rem 0.9rem;
+    border-bottom: 0;
+    border-radius: 0.55rem;
+  }
+
+  .topbar-nav a.active {
+    border-bottom-color: transparent;
+    background: var(--surface-3);
   }
 
   .topbar .user {
-    margin-left: auto;
+    order: 2;
+    width: 100%;
+    margin-left: 0;
+    justify-content: flex-end;
   }
 
   .hero {

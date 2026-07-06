@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { api } from "../api/client";
 import { useSession } from "../auth/useSession";
@@ -23,10 +23,16 @@ function isActivePath(pathname: string, to: string): boolean {
 export function Layout({ children }: { children: ReactNode }) {
   const { user } = useSession();
   const { pathname } = useLocation();
+  const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   const meetingsEnabled = import.meta.env.VITE_ENABLE_MEETINGS === "1";
   const nav = meetingsEnabled
     ? [...PRIMARY_NAV, MEETINGS_NAV, ...SECONDARY_NAV]
     : [...PRIMARY_NAV, ...SECONDARY_NAV];
+  const navId = "primary-navigation";
+
+  useEffect(() => {
+    setIsMobileNavOpen(false);
+  }, [pathname]);
 
   return (
     <div className="layout">
@@ -35,9 +41,26 @@ export function Layout({ children }: { children: ReactNode }) {
           <span className="brand-mark">h</span>
           <span>hwptopdf</span>
         </Link>
-        <nav>
+        <button
+          type="button"
+          className="topbar-toggle"
+          aria-controls={navId}
+          aria-expanded={isMobileNavOpen}
+          aria-label="모바일 탐색 메뉴"
+          onClick={() => setIsMobileNavOpen((current) => !current)}
+        >
+          <span aria-hidden="true" />
+          <span aria-hidden="true" />
+          <span aria-hidden="true" />
+        </button>
+        <nav id={navId} className={`topbar-nav${isMobileNavOpen ? " is-open" : ""}`}>
           {nav.map((n) => (
-            <Link key={n.to} to={n.to} className={isActivePath(pathname, n.to) ? "active" : ""}>
+            <Link
+              key={n.to}
+              to={n.to}
+              className={isActivePath(pathname, n.to) ? "active" : ""}
+              onClick={() => setIsMobileNavOpen(false)}
+            >
               {n.label}
             </Link>
           ))}
