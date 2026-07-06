@@ -113,7 +113,7 @@ describe("runWorkerOnce", () => {
     await runWorkerOnce(deps, "w"); // attempt 2 -> give up
     const job = await jobs.get(userId, id);
     expect(job?.status).toBe("failed");
-    expect(job?.error).toMatch(/boom/);
+    expect(job?.error).toBe("렌더링 실패: 다른 품질 모드로 재시도하거나 원본 문서를 다시 저장하세요.");
   });
 
   it("permanently fails password-protected jobs without burning retries", async () => {
@@ -134,6 +134,44 @@ describe("runWorkerOnce", () => {
 
     // A deterministic failure must not consume the retry budget: the job is
     // marked failed on the first pass and attempts stays at 0 (no re-queue).
+    const row = await db.prisma.conversionJob.findUnique({ where: { id } });
+    expect(row?.attempts).toBe(0);
+    expect(row?.lockedAt).toBeNull();
+  });
+
+  it("permanently fails unsupported-format jobs without burning retries", async () => {
+    const storage = new MemoryStorage();
+    const queue = new JobQueue(db.prisma);
+    const engine: Converter = {
+      name: "rhwp",
+      async convert() { throw new Error("unsupported format"); },
+    };
+    const deps: WorkerRuntimeDeps = { registry: registryWith(engine), storage, jobs, queue };
+
+    const id = await seedQueued(storage, queue);
+    expect(await runWorkerOnce(deps, "w")).toBe(true);
+
+    const job = await jobs.get(userId, id);
+    expect(job?.status).toBe("failed");
+    const row = await db.prisma.conversionJob.findUnique({ where: { id } });
+    expect(row?.attempts).toBe(0);
+    expect(row?.lockedAt).toBeNull();
+  });
+
+  it("permanently fails corrupt-file jobs without burning retries", async () => {
+    const storage = new MemoryStorage();
+    const queue = new JobQueue(db.prisma);
+    const engine: Converter = {
+      name: "rhwp",
+      async convert() { throw new Error("file is corrupt"); },
+    };
+    const deps: WorkerRuntimeDeps = { registry: registryWith(engine), storage, jobs, queue };
+
+    const id = await seedQueued(storage, queue);
+    expect(await runWorkerOnce(deps, "w")).toBe(true);
+
+    const job = await jobs.get(userId, id);
+    expect(job?.status).toBe("failed");
     const row = await db.prisma.conversionJob.findUnique({ where: { id } });
     expect(row?.attempts).toBe(0);
     expect(row?.lockedAt).toBeNull();
@@ -225,7 +263,7 @@ describe("processConversion", () => {
     const result = await processConversion({ registry: registryWith(engine), storage, jobs }, job);
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.error).toMatch(/NoSuchKey/);
+      expect(result.error).toBe("렌더링 실패: 다른 품질 모드로 재시도하거나 원본 문서를 다시 저장하세요.");
     }
   });
 });
