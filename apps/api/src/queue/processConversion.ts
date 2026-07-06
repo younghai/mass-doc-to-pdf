@@ -6,7 +6,7 @@ import {
   shouldRejectQuality,
 } from "../convert/quality.js";
 import { ConversionError, isReportingConverter, type ConversionResult } from "../convert/types.js";
-import { errorMessage as localizedErrorMessage } from "../convert/failure.js";
+import { errorMessage as localizedErrorMessage, isPermanentFailure, rawErrorMessage } from "../convert/failure.js";
 import { defaultPreviewRenderer, type PdfPreviewRenderer } from "../pdf/preview.js";
 import type { Registry } from "../convert/registry.js";
 import type { Storage } from "../storage/s3.js";
@@ -22,7 +22,17 @@ export interface WorkerDeps {
 
 export type ProcessResult =
   | { readonly ok: true; readonly engine: string; readonly durationMs: number }
-  | { readonly ok: false; readonly engine: string; readonly durationMs: number; readonly error: string };
+  | {
+      readonly ok: false;
+      readonly engine: string;
+      readonly durationMs: number;
+      readonly error: string;
+      readonly permanent: boolean;
+    };
+
+function logRawConversionFailure(jobId: string, err: unknown): void {
+  console.warn("worker conversion failed", { jobId, rawError: rawErrorMessage(err) });
+}
 
 /**
  * Convert one claimed job: read its source from storage, run the engine chain,
@@ -70,11 +80,14 @@ export async function processConversion(deps: WorkerDeps, job: QueuedJob): Promi
         Buffer.from(JSON.stringify(report)),
         "application/json",
       );
+      const err = new ConversionError(report.selectedEngine, qualityGateReason(report));
+      logRawConversionFailure(job.id, err);
       return {
         ok: false,
         engine: report.selectedEngine,
         durationMs,
-        error: localizedErrorMessage(new ConversionError(report.selectedEngine, qualityGateReason(report))),
+        error: localizedErrorMessage(err),
+        permanent: isPermanentFailure(rawErrorMessage(err)),
       };
     }
 
@@ -102,11 +115,13 @@ export async function processConversion(deps: WorkerDeps, job: QueuedJob): Promi
     });
     return { ok: true, engine: report.selectedEngine, durationMs };
   } catch (err) {
+    logRawConversionFailure(job.id, err);
     return {
       ok: false,
       engine: engineName,
       durationMs: Date.now() - started,
       error: localizedErrorMessage(err),
+      permanent: isPermanentFailure(rawErrorMessage(err)),
     };
   }
 }

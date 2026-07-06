@@ -194,7 +194,7 @@ describe("POST /api/convert", () => {
     const running = res.json() as { id: string };
     expect(running).toMatchObject({ status: "running" });
     const failed = await waitForJob(running.id, "failed");
-    expect(failed?.error).toMatch(/backend/);
+    expect(failed?.error).toBe("렌더링 실패: 다른 품질 모드로 재시도하거나 원본 문서를 다시 저장하세요.");
   });
 
   it("stores long Korean HWP filenames under a bounded object key", async () => {

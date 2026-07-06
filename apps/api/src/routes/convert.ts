@@ -9,7 +9,7 @@ import {
   reportObjectKey,
   shouldRejectQuality,
 } from "../convert/quality.js";
-import { errorMessage } from "../convert/failure.js";
+import { errorMessage, rawErrorMessage } from "../convert/failure.js";
 import { defaultPreviewRenderer } from "../pdf/preview.js";
 import {
   ConversionError,
@@ -38,6 +38,10 @@ function parseQualityMode(value: string | undefined): ConversionMode {
 function sourceObjectKey(userId: string, extension: string): string {
   const suffix = extension.replace(/[^a-z0-9]/gi, "").toLowerCase() || "bin";
   return `${userId}/src/${Date.now()}-${randomUUID()}.${suffix}`;
+}
+
+function logRawConversionFailure(jobId: string, err: unknown): void {
+  console.warn("conversion failed", { jobId, rawError: rawErrorMessage(err) });
 }
 
 async function finishConversion(
@@ -101,6 +105,7 @@ async function finishConversion(
         "application/json",
       );
     }
+    logRawConversionFailure(input.jobId, err);
     await deps.jobs.markFailed(input.jobId, {
       engine: err instanceof QualityGateError ? err.report.selectedEngine : input.engine.name,
       durationMs: Date.now() - started,

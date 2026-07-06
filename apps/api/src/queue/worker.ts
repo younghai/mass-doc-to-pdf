@@ -1,5 +1,4 @@
 import type { JobService } from "../jobs/jobService.js";
-import { isPermanentFailure } from "../convert/failure.js";
 import { JobQueue } from "./jobQueue.js";
 import { processConversion, type WorkerDeps } from "./processConversion.js";
 
@@ -29,7 +28,7 @@ export async function runWorkerOnce(deps: WorkerRuntimeDeps, workerId: string): 
   // Mirror the give-up path's lock semantics: release first (retryOrGiveUp's
   // give-up branch clears the lock before the caller marks the job failed), then
   // markFailed. We skip retryOrGiveUp entirely so attempts is not consumed.
-  if (isPermanentFailure(result.error)) {
+  if (result.permanent) {
     await deps.queue.release(job.id);
     await deps.jobs.markFailed(job.id, {
       engine: result.engine,
