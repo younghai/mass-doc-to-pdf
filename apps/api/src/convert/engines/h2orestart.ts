@@ -422,7 +422,7 @@ export class BuiltinOfficeConverter implements Converter {
   readonly name = "builtin-office";
   // Chrome headless inside the script is the hang risk; SIGKILL because a hung
   // Chrome can ignore the default SIGTERM and leave the worker stuck forever.
-  constructor(private readonly timeoutMs = Number(process.env.BUILTIN_TIMEOUT_MS ?? 120_000)) {}
+  constructor(private readonly timeoutMs = 120_000) {}
 
   async convert(input: ConvertInput): Promise<Buffer> {
     const dir = await mkdtemp(join(tmpdir(), "hwptopdf-office-"));

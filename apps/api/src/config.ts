@@ -30,6 +30,7 @@ export function loadEngineConfig(env: NodeJS.ProcessEnv): EngineConfig {
     gotenbergUrl: env.GOTENBERG_URL ?? "http://localhost:3000",
     hwpSidecarUrl: env.HWP_SIDECAR_URL ?? "http://localhost:8080",
     hwpSidecarTimeoutMs: Number(env.SIDECAR_TIMEOUT_MS ?? 150_000),
+    builtinTimeoutMs: Number(env.BUILTIN_TIMEOUT_MS ?? 120_000),
     officeEngine: officeEngine(env),
     rhwp: {
       enabled: env.RHWP_ENABLED !== "0",

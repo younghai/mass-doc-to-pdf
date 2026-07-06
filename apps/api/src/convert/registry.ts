@@ -13,6 +13,7 @@ export interface EngineConfig {
   // Client-side abort for the HWP/Office sidecar. Defaults to the converter's
   // own 150s when omitted; kept above the sidecar's internal 120s soffice cap.
   hwpSidecarTimeoutMs?: number;
+  builtinTimeoutMs: number;
   officeEngine: "gotenberg" | "hwp-sidecar" | "builtin";
   rhwp: RhwpConfig;
   rhwpCli: RhwpCliConfig;
@@ -58,12 +59,12 @@ function officeConverter(cfg: EngineConfig, mode: ConversionMode): Converter {
       if (mode === "precise") {
         return new QualityFallbackConverter("office-quality-chain", "office", mode, [
           new H2OrestartConverter(cfg.hwpSidecarUrl, undefined, cfg.hwpSidecarTimeoutMs),
-          ...(cfg.builtinAvailable !== false ? [new BuiltinOfficeConverter()] : []),
+          ...(cfg.builtinAvailable !== false ? [new BuiltinOfficeConverter(cfg.builtinTimeoutMs)] : []),
         ]);
       }
       // Operator explicitly chose builtin quick mode; honor it even when the
       // preflight flagged it unavailable (logEnginePreflight emits an error).
-      return new BuiltinOfficeConverter();
+      return new BuiltinOfficeConverter(cfg.builtinTimeoutMs);
     case "gotenberg":
       return new GotenbergConverter(cfg.gotenbergUrl);
   }
@@ -79,7 +80,7 @@ function officeConverter(cfg: EngineConfig, mode: ConversionMode): Converter {
 function hwpConverter(cfg: EngineConfig, mode: ConversionMode): Converter {
   if (mode === "quick") {
     return new QualityFallbackConverter("hwp-quick-chain", "hwp", mode, [
-      ...(cfg.builtinAvailable !== false ? [new BuiltinOfficeConverter()] : []),
+      ...(cfg.builtinAvailable !== false ? [new BuiltinOfficeConverter(cfg.builtinTimeoutMs)] : []),
       new H2OrestartConverter(cfg.hwpSidecarUrl, undefined, cfg.hwpSidecarTimeoutMs),
       ...(cfg.rhwp.enabled ? [new RhwpConverter(cfg.rhwp)] : []),
     ]);
@@ -89,6 +90,6 @@ function hwpConverter(cfg: EngineConfig, mode: ConversionMode): Converter {
     ...(cfg.rhwpCli.enabled ? [new RhwpCliConverter({ ...cfg.rhwpCli, mode: "pdf" })] : []),
     ...(cfg.rhwp.enabled ? [new RhwpConverter(cfg.rhwp)] : []),
     new H2OrestartConverter(cfg.hwpSidecarUrl, undefined, cfg.hwpSidecarTimeoutMs),
-    ...(cfg.builtinAvailable !== false ? [new BuiltinOfficeConverter()] : []),
+    ...(cfg.builtinAvailable !== false ? [new BuiltinOfficeConverter(cfg.builtinTimeoutMs)] : []),
   ]);
 }
