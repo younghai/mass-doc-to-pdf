@@ -69,6 +69,26 @@
   color: #8a5a00;
 }
 
+.mini-pill.quality-passed {
+  background: #eaf7ee;
+  color: #1f8b37;
+}
+
+.mini-pill.quality-review {
+  background: #fff5db;
+  color: #9a5b00;
+}
+
+.mini-pill.quality-failed {
+  background: #fdecec;
+  color: var(--danger);
+}
+
+.mini-pill.quality-missing {
+  background: #eef1f4;
+  color: #5e6a78;
+}
+
 .pdf-preview {
   margin-top: 1.25rem;
 }

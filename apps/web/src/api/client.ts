@@ -4,8 +4,14 @@ import {
   type JobDTO,
   type JobStatus,
   type QualityReport,
+  type QualityStatus,
   type StatsDTO,
 } from "@hwptopdf/shared";
+
+export type JobListFilters = {
+  readonly status?: JobStatus;
+  readonly qualityStatus?: QualityStatus;
+};
 
 export interface SessionInfo {
   user?: { email?: string | null; name?: string | null; image?: string | null };
@@ -22,9 +28,12 @@ export const api = {
     if (!r.ok) return null;
     return r.json() as Promise<SessionInfo>;
   },
-  listJobs(status?: JobStatus): Promise<JobDTO[]> {
-    const q = status ? `?status=${status}` : "";
-    return fetch(`/api/jobs${q}`).then((r) => asJson<JobDTO[]>(r));
+  listJobs(filters: JobListFilters = {}): Promise<JobDTO[]> {
+    const q = new URLSearchParams();
+    if (filters.status) q.set("status", filters.status);
+    if (filters.qualityStatus) q.set("qualityStatus", filters.qualityStatus);
+    const query = q.toString();
+    return fetch(`/api/jobs${query ? `?${query}` : ""}`).then((r) => asJson<JobDTO[]>(r));
   },
   getJob(id: string): Promise<JobDTO> {
     return fetch(`/api/jobs/${id}`).then((r) => asJson<JobDTO>(r));

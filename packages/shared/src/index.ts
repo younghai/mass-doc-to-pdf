@@ -92,6 +92,7 @@ export interface JobDTO {
   sizeBytes: number;
   status: JobStatus;
   engine: string | null;
+  qualityStatus?: QualityStatus;
   durationMs: number | null;
   error: string | null;
   createdAt: string; // ISO

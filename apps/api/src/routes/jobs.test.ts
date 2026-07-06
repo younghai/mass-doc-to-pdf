@@ -98,6 +98,44 @@ describe("jobs routes", () => {
     expect(list[0].status).toBe("failed");
   });
 
+  it("GET /api/jobs?qualityStatus=review returns only review-quality successes", async () => {
+    const review = await jobs.create(userId, {
+      filename: "needs-review.docx",
+      format: "office",
+      extension: "docx",
+      mimeType: "application/octet-stream",
+      sizeBytes: 10,
+      sourceKey: "src/needs-review.docx",
+    });
+    await jobs.markSuccess(review.id, {
+      engine: "rhwp",
+      durationMs: 100,
+      outputKey: "out/needs-review",
+      qualityStatus: "review",
+    });
+    const passed = await jobs.create(userId, {
+      filename: "passed.docx",
+      format: "office",
+      extension: "docx",
+      mimeType: "application/octet-stream",
+      sizeBytes: 10,
+      sourceKey: "src/passed.docx",
+    });
+    await jobs.markSuccess(passed.id, {
+      engine: "rhwp",
+      durationMs: 80,
+      outputKey: "out/passed",
+      qualityStatus: "passed",
+    });
+
+    const { app } = makeApp();
+    const res = await app.inject({ method: "GET", url: "/api/jobs?status=success&qualityStatus=review" });
+    const list = res.json() as Array<{ filename: string; qualityStatus?: string; status: string }>;
+
+    expect(list.map((j) => j.filename)).toEqual(["needs-review.docx"]);
+    expect(list.every((j) => j.status === "success" && j.qualityStatus === "review")).toBe(true);
+  });
+
   it("GET /api/jobs/:id returns the DTO; 404 for unknown", async () => {
     const { app } = makeApp();
     const all = (await app.inject({ method: "GET", url: "/api/jobs" })).json() as Array<{ id: string }>;

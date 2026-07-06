@@ -79,7 +79,7 @@ export class JobQueue {
   async enqueue(jobId: string): Promise<void> {
     await this.prisma.conversionJob.update({
       where: { id: jobId },
-      data: { status: "queued", lockedAt: null, lockedBy: null, error: null },
+      data: { status: "queued", qualityStatus: null, lockedAt: null, lockedBy: null, error: null },
     });
   }
 
@@ -108,6 +108,7 @@ export class JobQueue {
         where: { id: candidate.id, status: candidate.status, lockedAt: candidate.lockedAt },
         data: {
           status: "running",
+          qualityStatus: null,
           lockedAt: now,
           lockedBy: workerId,
         },
@@ -205,7 +206,7 @@ export class JobQueue {
     if (attempts < this.maxAttempts) {
       await this.prisma.conversionJob.update({
         where: { id: jobId },
-        data: { status: "queued", lockedAt: null, lockedBy: null, attempts },
+        data: { status: "queued", qualityStatus: null, lockedAt: null, lockedBy: null, attempts },
       });
       return { willRetry: true };
     }

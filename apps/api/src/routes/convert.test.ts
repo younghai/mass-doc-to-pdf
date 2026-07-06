@@ -107,13 +107,15 @@ describe("POST /api/convert", () => {
         format: "office",
         selectedEngine: "rhwp",
         grade: "good",
+        status: "review",
         checks: { pdfBytes: 8, pageCount: 1 },
         attempts: [{ engine: "rhwp", status: "success", durationMs: 10 }],
         warnings: [],
         createdAt: new Date(2026, 0, 1).toISOString(),
       },
     });
-    await waitForJob(running.id, "success");
+    const done = await waitForJob(running.id, "success");
+    expect(done?.qualityStatus).toBe("review");
     const reportPut = vi
       .mocked(storage.put)
       .mock.calls.find(([key]) => key === `${userId}/report/${running.id}.json`);
@@ -155,6 +157,7 @@ describe("POST /api/convert", () => {
 
     const failed = await waitForJob(running.id, "failed");
     expect(failed?.engine).toBe("builtin-office");
+    expect(failed?.qualityStatus).toBe("review");
     expect(failed?.error).toMatch(/품질 게이트 실패/);
     expect(
       vi.mocked(storage.put).mock.calls.some(([key]) => key === `${userId}/out/${running.id}.pdf`),
