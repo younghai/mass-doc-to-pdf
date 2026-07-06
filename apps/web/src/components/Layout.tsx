@@ -3,10 +3,15 @@ import { Link, useLocation } from "react-router-dom";
 import { api } from "../api/client";
 import { useSession } from "../auth/useSession";
 
-const NAV = [
+const PRIMARY_NAV = [
   { to: "/service", label: "운영 현황" },
   { to: "/service/upload", label: "문서 업로드" },
   { to: "/service/batch", label: "폴더 일괄 변환" },
+] as const;
+
+const MEETINGS_NAV = { to: "/labs/meetings", label: "회의록 (실험)" } as const;
+
+const SECONDARY_NAV = [
   { to: "/service/jobs", label: "작업 큐" },
 ] as const;
 
@@ -18,6 +23,11 @@ function isActivePath(pathname: string, to: string): boolean {
 export function Layout({ children }: { children: ReactNode }) {
   const { user } = useSession();
   const { pathname } = useLocation();
+  const meetingsEnabled = import.meta.env.VITE_ENABLE_MEETINGS === "1";
+  const nav = meetingsEnabled
+    ? [...PRIMARY_NAV, MEETINGS_NAV, ...SECONDARY_NAV]
+    : [...PRIMARY_NAV, ...SECONDARY_NAV];
+
   return (
     <div className="layout">
       <header className="topbar">
@@ -26,7 +36,7 @@ export function Layout({ children }: { children: ReactNode }) {
           <span>hwptopdf</span>
         </Link>
         <nav>
-          {NAV.map((n) => (
+          {nav.map((n) => (
             <Link key={n.to} to={n.to} className={isActivePath(pathname, n.to) ? "active" : ""}>
               {n.label}
             </Link>

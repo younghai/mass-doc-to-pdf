@@ -106,3 +106,5 @@ export interface StatsDTO {
   pending: number;
   successRate: number; // 0..1, success / (success+failed)
 }
+
+export * from "./meeting.js";
