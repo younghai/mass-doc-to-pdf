@@ -1,4 +1,4 @@
-import type { ReactElement } from "react";
+import { lazy, Suspense, type ReactElement } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 import { useSession } from "./auth/useSession";
 import { Layout } from "./components/Layout";
@@ -9,6 +9,11 @@ import { Upload } from "./pages/Upload";
 import { BatchUpload } from "./pages/BatchUpload";
 import { Jobs } from "./pages/Jobs";
 import { JobDetail } from "./pages/JobDetail";
+
+const meetingsEnabled = import.meta.env.VITE_ENABLE_MEETINGS === "1";
+const Meetings = meetingsEnabled
+  ? lazy(() => import("./pages/Meetings").then(({ Meetings }) => ({ default: Meetings })))
+  : null;
 
 function RequireAuth({ children }: { children: ReactElement }) {
   const { user, isLoading } = useSession();
@@ -46,6 +51,24 @@ export function App() {
           </RequireAuth>
         }
       />
+      <Route
+        path="/service/meetings/*"
+        element={<Navigate to="/service" replace />}
+      />
+      {meetingsEnabled && Meetings ? (
+        <Route
+          path="/labs/meetings/*"
+          element={
+            <RequireAuth>
+              <Suspense fallback={<div>로딩 중…</div>}>
+                <Meetings />
+              </Suspense>
+            </RequireAuth>
+          }
+        />
+      ) : (
+        <Route path="/labs/meetings/*" element={<Navigate to="/service" replace />} />
+      )}
       <Route
         path="/service/jobs"
         element={
