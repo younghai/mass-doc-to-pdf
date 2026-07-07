@@ -145,6 +145,7 @@
 - ✅ **AUD-1**(image_tag 인젝션, MEDIUM) — 커밋 `a5a51a1`
 - ✅ **AUD-5**(README trustProxy 드리프트) — 커밋 `a5a51a1`
 - ✅ **AUD-6**(package.sh 예제 오탐) — 커밋 `a5a51a1`
-- ⏳ **AUD-2/3/4**(테스트 커버리지: trustProxy/멀티파트 통합·429 한도·JobDetail success 삭제) — 미착수
+- ✅ **AUD-2/3/4**(테스트 커버리지: trustProxy 스푸핑·멀티파트 파트 거부·429 한도·JobDetail success 삭제) — 커밋 `63502e8`
+- ✅ **SEC-1**(분석 C: builtin 엔진 ZIP+XML 하드닝 — zip bomb 캡 + DTD/엔티티 차단) — 커밋 `974e98e` ([스펙](16-codex-스펙-보안하드닝.md))
 - ⏳ **AUD-7**(CSP 미사용 아바타 호스트, INFO) — 미착수(선택)
 - 🆕 **AUD-8**(worker.test.ts 간헐 flake) — `pnpm -r test` 병렬 실행 시 `runWorkerOnce` 계열이 타이밍으로 드물게 실패, 개별 패키지 실행은 항상 통과. 원인 추정: 공유 test DB의 동시 접근/락 타이밍. **조치 제안:** worker 큐 테스트를 격리 DB 또는 직렬(`--no-file-parallelism` 스코프)로, 또는 claim/lock 타이밍에 대한 결정적 대기. 배포 차단 아님.
