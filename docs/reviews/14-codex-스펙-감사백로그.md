@@ -138,3 +138,13 @@
 1. **SPEC-AUD-1**(MEDIUM, 유일한 실질 보안) → 2. **AUD-5·AUD-6**(문서/스크립트, 초저위험 빠른 처리) → 3. **AUD-2·AUD-3·AUD-4**(테스트 커버리지 보강) → 4. **AUD-7**(선택/무조치).
 
 각 SPEC 독립 커밋. 구현 후 Fable 5 감사.
+
+---
+
+## 진행 상황 (2026-07-08)
+- ✅ **AUD-1**(image_tag 인젝션, MEDIUM) — 커밋 `a5a51a1`
+- ✅ **AUD-5**(README trustProxy 드리프트) — 커밋 `a5a51a1`
+- ✅ **AUD-6**(package.sh 예제 오탐) — 커밋 `a5a51a1`
+- ⏳ **AUD-2/3/4**(테스트 커버리지: trustProxy/멀티파트 통합·429 한도·JobDetail success 삭제) — 미착수
+- ⏳ **AUD-7**(CSP 미사용 아바타 호스트, INFO) — 미착수(선택)
+- 🆕 **AUD-8**(worker.test.ts 간헐 flake) — `pnpm -r test` 병렬 실행 시 `runWorkerOnce` 계열이 타이밍으로 드물게 실패, 개별 패키지 실행은 항상 통과. 원인 추정: 공유 test DB의 동시 접근/락 타이밍. **조치 제안:** worker 큐 테스트를 격리 DB 또는 직렬(`--no-file-parallelism` 스코프)로, 또는 claim/lock 타이밍에 대한 결정적 대기. 배포 차단 아님.
