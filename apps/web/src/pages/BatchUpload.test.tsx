@@ -1,5 +1,5 @@
-import { beforeEach, vi } from "vitest";
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { afterEach, beforeEach, vi } from "vitest";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderWithProviders } from "../test/render";
 import { BatchUpload } from "./BatchUpload";
@@ -8,7 +8,7 @@ import type { JobDTO } from "@hwptopdf/shared";
 
 vi.mock("../api/client", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../api/client")>();
-  return { ...actual, api: { ...actual.api, upload: vi.fn(), getJob: vi.fn(), getQualityReport: vi.fn() } };
+  return { ...actual, api: { ...actual.api, upload: vi.fn(), listJobs: vi.fn(), getJob: vi.fn(), getQualityReport: vi.fn() } };
 });
 
 const job = (over: Partial<JobDTO>): JobDTO => ({
@@ -28,6 +28,7 @@ const job = (over: Partial<JobDTO>): JobDTO => ({
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(api.listJobs).mockResolvedValue([]);
   vi.mocked(api.getJob).mockResolvedValue(job({ status: "success", engine: "rhwp", durationMs: 100 }));
   vi.mocked(api.getQualityReport).mockResolvedValue({
     version: 1,
@@ -44,6 +45,10 @@ beforeEach(() => {
     warnings: [],
     createdAt: new Date(2026, 0, 1).toISOString(),
   });
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 test("shows folder batch limits and accepted file guidance", () => {
@@ -76,10 +81,14 @@ test("selects supported folder files and skips unsupported or oversized files", 
   expect(screen.getByText("20.0 MB 초과")).toBeInTheDocument();
 });
 
-test("queues ready files sequentially through the upload API", async () => {
+test("queues ready files through the upload API", async () => {
   vi.mocked(api.upload)
     .mockResolvedValueOnce(job({ id: "j1", filename: "a.docx" }))
     .mockResolvedValueOnce(job({ id: "j2", filename: "b.pptx" }));
+  vi.mocked(api.listJobs).mockResolvedValue([
+    job({ id: "j1", filename: "a.docx", status: "success" }),
+    job({ id: "j2", filename: "b.pptx", status: "success" }),
+  ]);
 
   renderWithProviders(<BatchUpload />);
   await userEvent.upload(screen.getByTestId("folder-input"), [
@@ -102,9 +111,90 @@ test("queues ready files sequentially through the upload API", async () => {
   );
 });
 
+test("starts uploads with a fixed concurrency cap and never exceeds it", async () => {
+  const expectedCap = 5;
+  let activeUploads = 0;
+  let maxConcurrentUploads = 0;
+  const resolvers: Array<(value: JobDTO) => void> = [];
+  vi.mocked(api.upload).mockImplementation((file) => {
+    activeUploads += 1;
+    maxConcurrentUploads = Math.max(maxConcurrentUploads, activeUploads);
+    return new Promise<JobDTO>((resolve) => {
+      resolvers.push((value) => {
+        activeUploads -= 1;
+        resolve(value);
+      });
+    });
+  });
+
+  renderWithProviders(<BatchUpload />);
+  await userEvent.upload(
+    screen.getByTestId("folder-input"),
+    Array.from({ length: 7 }, (_, index) => new File(["x"], `doc-${index}.docx`)),
+  );
+  await userEvent.click(screen.getByRole("button", { name: "변환 시작" }));
+
+  await waitFor(() => expect(api.upload).toHaveBeenCalledTimes(expectedCap));
+  expect(maxConcurrentUploads).toBe(expectedCap);
+
+  resolvers[0]?.(job({ id: "j0", filename: "doc-0.docx" }));
+  await waitFor(() => expect(api.upload).toHaveBeenCalledTimes(expectedCap + 1));
+  expect(maxConcurrentUploads).toBe(expectedCap);
+});
+
+test("uses one batched jobs poller to update registered job statuses", async () => {
+  vi.mocked(api.upload)
+    .mockResolvedValueOnce(job({ id: "j1", filename: "done.docx" }))
+    .mockResolvedValueOnce(job({ id: "j2", filename: "failed.docx" }));
+  vi.mocked(api.listJobs).mockResolvedValue([
+    job({ id: "j1", filename: "done.docx", status: "success" }),
+    job({ id: "j2", filename: "failed.docx", status: "failed", error: "변환 실패" }),
+  ]);
+
+  renderWithProviders(<BatchUpload />);
+  await userEvent.upload(screen.getByTestId("folder-input"), [
+    new File(["a"], "done.docx"),
+    new File(["b"], "failed.docx"),
+  ]);
+  await userEvent.click(screen.getByRole("button", { name: "변환 시작" }));
+
+  await waitFor(() => expect(api.listJobs).toHaveBeenCalled());
+  expect(api.getJob).not.toHaveBeenCalled();
+  const rows = screen.getAllByRole("row");
+  await waitFor(() => expect(within(rows[1]).getByText("성공")).toBeInTheDocument());
+  expect(within(rows[2]).getByText("재시도 가능")).toBeInTheDocument();
+});
+
+test("cancel prevents queued files that have not started uploading", async () => {
+  const resolvers: Array<(value: JobDTO) => void> = [];
+  vi.mocked(api.upload).mockImplementation((file) => {
+    return new Promise<JobDTO>((resolve) => {
+      resolvers.push((value) => resolve(value));
+    });
+  });
+
+  renderWithProviders(<BatchUpload />);
+  await userEvent.upload(
+    screen.getByTestId("folder-input"),
+    Array.from({ length: 7 }, (_, index) => new File(["x"], `cancel-${index}.docx`)),
+  );
+  await userEvent.click(screen.getByRole("button", { name: "변환 시작" }));
+
+  await waitFor(() => expect(api.upload).toHaveBeenCalledTimes(5));
+  await userEvent.click(screen.getByRole("button", { name: "취소" }));
+  resolvers.forEach((resolve, index) => resolve(job({ id: `j${index}`, filename: `cancel-${index}.docx` })));
+
+  await waitFor(() => expect(screen.getAllByText("취소됨").length).toBe(4));
+  const rows = screen.getAllByRole("row");
+  expect(within(rows[6]).getAllByText("취소됨")).toHaveLength(2);
+  expect(within(rows[7]).getAllByText("취소됨")).toHaveLength(2);
+  expect(api.upload).toHaveBeenCalledTimes(5);
+});
+
 test("separates low-quality batch results after conversion completes", async () => {
   vi.mocked(api.upload).mockResolvedValue(job({ id: "j3", filename: "fallback.hwp" }));
   vi.mocked(api.getJob).mockResolvedValue(job({ id: "j3", status: "success", engine: "builtin-office" }));
+  vi.mocked(api.listJobs).mockResolvedValue([job({ id: "j3", status: "success", engine: "builtin-office" })]);
   vi.mocked(api.getQualityReport).mockResolvedValue({
     version: 1,
     jobId: "j3",
@@ -129,6 +219,29 @@ test("separates low-quality batch results after conversion completes", async () 
   const rows = screen.getAllByRole("row");
   await waitFor(() => expect(within(rows[1]).getByText("저품질 의심")).toBeInTheDocument());
   expect(api.upload).toHaveBeenCalledWith(expect.any(File), "quick");
+});
+
+test("marks a non-terminal job as delayed after the polling time budget is exhausted", async () => {
+  vi.useFakeTimers();
+  vi.mocked(api.upload).mockResolvedValue(job({ id: "slow-1", filename: "slow.docx" }));
+  vi.mocked(api.getJob).mockResolvedValue(job({ id: "slow-1", status: "running" }));
+  vi.mocked(api.listJobs).mockResolvedValue([job({ id: "slow-1", status: "running" })]);
+
+  renderWithProviders(<BatchUpload />);
+  fireEvent.change(screen.getByTestId("folder-input"), {
+    target: { files: [new File(["a"], "slow.docx")] },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "변환 시작" }));
+
+  await act(async () => {
+    await Promise.resolve();
+  });
+  expect(api.upload).toHaveBeenCalledTimes(1);
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(120_000);
+  });
+
+  expect(screen.getByText("처리 지연 — 작업 큐에서 확인")).toBeInTheDocument();
 });
 
 test("keeps only the first 1000 files from a folder selection", async () => {
