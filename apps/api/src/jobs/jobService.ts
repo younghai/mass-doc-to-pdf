@@ -64,6 +64,11 @@ type ListInput = {
   readonly take?: number;
 };
 
+export type BatchOutput = {
+  readonly filename: string;
+  readonly outputKey: string;
+};
+
 function batchStatusFromCounts(pending: number, queued: number, running: number): BatchStatus {
   return pending + queued + running > 0 ? "active" : "completed";
 }
@@ -231,5 +236,17 @@ export class JobService {
       success,
       failed,
     };
+  }
+
+  async listBatchOutputs(userId: string, batchId: string): Promise<BatchOutput[] | null> {
+    const rows = await this.prisma.conversionJob.findMany({
+      where: { userId, batchId },
+      select: { status: true, filename: true, outputKey: true, createdAt: true },
+      orderBy: { createdAt: "asc" },
+    });
+    if (rows.length === 0) return null;
+    return rows.flatMap((row) =>
+      row.status === "success" && row.outputKey ? [{ filename: row.filename, outputKey: row.outputKey }] : [],
+    );
   }
 }

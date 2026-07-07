@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { renderWithProviders } from "../test/render";
 import { BatchUpload } from "./BatchUpload";
 import { api, MAX_UPLOAD_BYTES } from "../api/client";
-import type { JobDTO } from "@hwptopdf/shared";
+import type { BatchDTO, JobDTO } from "@hwptopdf/shared";
 
 vi.mock("../api/client", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../api/client")>();
@@ -14,6 +14,7 @@ vi.mock("../api/client", async (importOriginal) => {
       ...actual.api,
       upload: vi.fn(),
       listJobs: vi.fn(),
+      getBatch: vi.fn(),
       getJob: vi.fn(),
       getQualityReport: vi.fn(),
     },
@@ -35,10 +36,24 @@ const job = (over: Partial<JobDTO>): JobDTO => ({
   ...over,
 });
 
+const batch = (over: Partial<BatchDTO>): BatchDTO => ({
+  id: "batch-1",
+  createdAt: new Date(2026, 0, 1).toISOString(),
+  status: "completed",
+  total: 2,
+  pending: 0,
+  queued: 0,
+  running: 0,
+  success: 1,
+  failed: 1,
+  ...over,
+});
+
 beforeEach(() => {
   vi.clearAllMocks();
   window.localStorage.clear();
   vi.mocked(api.listJobs).mockResolvedValue([]);
+  vi.mocked(api.getBatch).mockResolvedValue(batch({}));
   vi.mocked(api.getJob).mockResolvedValue(job({ status: "success", engine: "rhwp", durationMs: 100 }));
   vi.mocked(api.getQualityReport).mockResolvedValue({
     version: 1,
@@ -263,4 +278,13 @@ test("keeps only the first 1000 files from a folder selection", async () => {
   expect(screen.getByRole("alert")).toHaveTextContent("1,000개까지만 등록했습니다");
   expect(screen.getByText("doc-999.docx")).toBeInTheDocument();
   expect(screen.queryByText("doc-1000.docx")).not.toBeInTheDocument();
+});
+
+test("shows a successful-results zip download link for a restored batch with successes", async () => {
+  vi.mocked(api.getBatch).mockResolvedValue(batch({ id: "batch-zip", success: 2, failed: 0, total: 2 }));
+
+  renderWithProviders(<BatchUpload />, { route: "/service/batch?batch=batch-zip" });
+
+  const link = await screen.findByRole("link", { name: "성공분 ZIP 다운로드" });
+  expect(link).toHaveAttribute("href", "/api/batches/batch-zip/download");
 });

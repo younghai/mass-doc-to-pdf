@@ -220,6 +220,9 @@ export function BatchUpload() {
 
   const restoredBatch = items.length === 0 ? batchPoll.data : undefined;
   const restored = restoredBatch ? restoredProgress(restoredBatch) : null;
+  const successfulOutputCount = restoredBatch ? restoredBatch.success : summary.success + summary.review;
+  const batchDownloadHref =
+    activeBatchId !== null && successfulOutputCount > 0 ? api.batchDownloadUrl(activeBatchId) : null;
 
   useEffect(() => {
     if (queryBatchId && queryBatchId !== activeBatchId) {
@@ -379,9 +382,16 @@ export function BatchUpload() {
           <h2>폴더 일괄 변환</h2>
           <p>폴더에서 최대 1,000개 문서를 선택해 작업 큐에 동시 등록합니다.</p>
         </div>
-        <Link to="/service/jobs" className="btn secondary">
-          작업 큐 보기
-        </Link>
+        <div className="batch-actions">
+          {batchDownloadHref ? (
+            <a href={batchDownloadHref} className="btn primary">
+              성공분 ZIP 다운로드
+            </a>
+          ) : null}
+          <Link to="/service/jobs" className="btn secondary">
+            작업 큐 보기
+          </Link>
+        </div>
       </div>
 
       <div className="batch-panel">
