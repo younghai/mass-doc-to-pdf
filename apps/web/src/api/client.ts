@@ -67,6 +67,7 @@ export const api = {
     if (!r.ok && r.status !== 404) throw new Error(`delete failed: ${r.status}`);
   },
   downloadUrl: (id: string) => `/api/jobs/${id}/download`,
+  batchDownloadUrl: (id: string) => `/api/batches/${encodeURIComponent(id)}/download`,
   previewUrl: (id: string) => `/api/jobs/${id}/preview`,
   previewImageUrl: (id: string) => `/api/jobs/${id}/preview.png`,
   signInUrl: () => "/api/auth/signin/google",

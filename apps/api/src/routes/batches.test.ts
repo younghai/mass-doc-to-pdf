@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { Readable } from "node:stream";
 import type { BatchDTO, JobStatus } from "@hwptopdf/shared";
 import { buildApp, type AppDeps } from "../app.js";
 import type { Converter } from "../convert/types.js";
@@ -21,10 +22,31 @@ const base = (filename: string) => ({
   sourceKey: `src/${filename}`,
 });
 
-function makeApp(userId: string) {
+function memoryStorage(objects = new Map<string, Buffer>()) {
+  return {
+    put: vi.fn(async (key: string, body: Buffer) => {
+      objects.set(key, body);
+    }),
+    get: vi.fn(async (key: string) => {
+      const stored = objects.get(key);
+      if (!stored) throw Object.assign(new Error("not found"), { code: "ENOENT" });
+      return new Uint8Array(stored);
+    }),
+    getStream: vi.fn(async (key: string) => {
+      const stored = objects.get(key);
+      if (!stored) throw Object.assign(new Error("not found"), { code: "ENOENT" });
+      return Readable.from(stored);
+    }),
+    delete: vi.fn(async (key: string) => {
+      objects.delete(key);
+    }),
+  };
+}
+
+function makeApp(userId: string, storage = memoryStorage()) {
   const deps: AppDeps = {
     registry: { forFormat: () => noEngine },
-    storage: { put: vi.fn(), get: vi.fn(), delete: vi.fn() },
+    storage,
     jobs,
     webOrigin: "http://localhost",
     getSessionUser: async () => ({ id: userId, email: "u@x.c" }),
@@ -97,5 +119,54 @@ describe("GET /api/batches/:id", () => {
     const res = await makeApp(otherId).inject({ method: "GET", url: "/api/batches/private-batch" });
 
     expect(res.statusCode).toBe(404);
+  });
+});
+
+describe("GET /api/batches/:id/download", () => {
+  it("streams a zip containing only the owner's successful batch PDFs", async () => {
+    await createJob(ownerId, "zip-batch", "success", "report.docx");
+    await createJob(ownerId, "zip-batch", "success", "report.docx");
+    await createJob(ownerId, "zip-batch", "failed", "failed.docx");
+    await createJob(ownerId, "other-batch", "success", "ignored.docx");
+    const objects = new Map([["out/report.docx", Buffer.from("%PDF-1.7 dummy")]]);
+    const storage = memoryStorage(objects);
+
+    const res = await makeApp(ownerId, storage).inject({
+      method: "GET",
+      url: "/api/batches/zip-batch/download",
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.headers["content-type"]).toContain("application/zip");
+    expect(res.headers["content-disposition"]).toContain('filename="batch-zip-batch.pdf.zip"');
+    expect(res.rawPayload.subarray(0, 4)).toEqual(Buffer.from([0x50, 0x4b, 0x03, 0x04]));
+    expect(res.rawPayload.includes(Buffer.from("report.pdf"))).toBe(true);
+    expect(res.rawPayload.includes(Buffer.from("report-1.pdf"))).toBe(true);
+    expect(res.rawPayload.includes(Buffer.from("failed.pdf"))).toBe(false);
+    expect(storage.getStream).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not expose another user's batch download", async () => {
+    await createJob(ownerId, "private-batch", "success", "private.docx");
+
+    const res = await makeApp(otherId).inject({
+      method: "GET",
+      url: "/api/batches/private-batch/download",
+    });
+
+    expect(res.statusCode).toBe(404);
+    expect(res.json()).toEqual({ error: "not found" });
+  });
+
+  it("returns 404 when the owner has no successful jobs in the batch", async () => {
+    await createJob(ownerId, "empty-success-batch", "failed", "failed.docx");
+
+    const res = await makeApp(ownerId).inject({
+      method: "GET",
+      url: "/api/batches/empty-success-batch/download",
+    });
+
+    expect(res.statusCode).toBe(404);
+    expect(res.json()).toEqual({ error: "no successful jobs" });
   });
 });
