@@ -138,3 +138,28 @@ test("delete proceeds when the user confirms", async () => {
   await waitFor(() => expect(api.deleteJob).toHaveBeenCalledWith("1"));
   confirmSpy.mockRestore();
 });
+
+test("successful job delete asks for confirmation and does nothing when the user declines", async () => {
+  vi.mocked(api.deleteJob).mockClear();
+  vi.mocked(api.getJob).mockResolvedValue(job({ status: "success" }));
+  vi.mocked(api.getQualityReport).mockResolvedValue(null);
+  const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+  renderDetail();
+  const delBtn = await screen.findByRole("button", { name: "삭제" });
+  fireEvent.click(delBtn);
+  expect(confirmSpy).toHaveBeenCalled();
+  expect(api.deleteJob).not.toHaveBeenCalled();
+  confirmSpy.mockRestore();
+});
+
+test("successful job delete proceeds when the user confirms", async () => {
+  vi.mocked(api.deleteJob).mockClear();
+  vi.mocked(api.getJob).mockResolvedValue(job({ status: "success" }));
+  vi.mocked(api.getQualityReport).mockResolvedValue(null);
+  const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+  renderDetail();
+  const delBtn = await screen.findByRole("button", { name: "삭제" });
+  fireEvent.click(delBtn);
+  await waitFor(() => expect(api.deleteJob).toHaveBeenCalledWith("1"));
+  confirmSpy.mockRestore();
+});
