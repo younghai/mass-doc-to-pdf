@@ -54,7 +54,12 @@ jobs:
         env:
           GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
           GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
+          IMAGE_TAG: ${{ inputs.image_tag }}
         run: |
+          TAG="${IMAGE_TAG:-}"
+          case "$TAG" in
+            *[!A-Za-z0-9._:-]*|'') echo "invalid image_tag" >&2; exit 1 ;;
+          esac
           TARGET="${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}"
           # Log in to GHCR by piping the token over ssh stdin. The token never lands
           # on the remote process's command line (/proc/<pid>/cmdline) or in shell
@@ -65,7 +70,7 @@ jobs:
                   "docker login ghcr.io -u '$GHCR_USERNAME' --password-stdin"
           fi
           # The compose steps carry no secrets, so a fixed remote script is safe.
-          ssh -i ~/.ssh/deploy_key "$TARGET" <<'REMOTE'
+          ssh -i ~/.ssh/deploy_key "$TARGET" "HWPTOPDF_IMAGE_TAG='$TAG' sh -se" <<'REMOTE'
           set -eu
           cd '${{ secrets.DEPLOY_PATH }}'
           if docker compose version >/dev/null 2>&1; then
@@ -73,7 +78,6 @@ jobs:
           else
             COMPOSE="docker-compose"
           fi
-          export HWPTOPDF_IMAGE_TAG='${{ inputs.image_tag }}'
           $COMPOSE --env-file .env.production -f docker-compose.prod.yml pull
           $COMPOSE --env-file .env.production -f docker-compose.prod.yml up -d --remove-orphans
           $COMPOSE --env-file .env.production -f docker-compose.prod.yml ps
