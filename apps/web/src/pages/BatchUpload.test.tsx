@@ -8,7 +8,16 @@ import type { JobDTO } from "@hwptopdf/shared";
 
 vi.mock("../api/client", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../api/client")>();
-  return { ...actual, api: { ...actual.api, upload: vi.fn(), listJobs: vi.fn(), getJob: vi.fn(), getQualityReport: vi.fn() } };
+  return {
+    ...actual,
+    api: {
+      ...actual.api,
+      upload: vi.fn(),
+      listJobs: vi.fn(),
+      getJob: vi.fn(),
+      getQualityReport: vi.fn(),
+    },
+  };
 });
 
 const job = (over: Partial<JobDTO>): JobDTO => ({
@@ -28,6 +37,7 @@ const job = (over: Partial<JobDTO>): JobDTO => ({
 
 beforeEach(() => {
   vi.clearAllMocks();
+  window.localStorage.clear();
   vi.mocked(api.listJobs).mockResolvedValue([]);
   vi.mocked(api.getJob).mockResolvedValue(job({ status: "success", engine: "rhwp", durationMs: 100 }));
   vi.mocked(api.getQualityReport).mockResolvedValue({
@@ -99,7 +109,7 @@ test("queues ready files through the upload API", async () => {
   await userEvent.click(screen.getByRole("button", { name: "변환 시작" }));
 
   await waitFor(() => expect(api.upload).toHaveBeenCalledTimes(2));
-  expect(api.upload).toHaveBeenCalledWith(expect.any(File), "precise");
+  expect(api.upload).toHaveBeenCalledWith(expect.any(File), "precise", expect.any(String));
   const rows = screen.getAllByRole("row");
   expect(within(rows[1]).getByRole("link", { name: "작업 보기" })).toHaveAttribute(
     "href",
@@ -218,7 +228,7 @@ test("separates low-quality batch results after conversion completes", async () 
 
   const rows = screen.getAllByRole("row");
   await waitFor(() => expect(within(rows[1]).getByText("저품질 의심")).toBeInTheDocument());
-  expect(api.upload).toHaveBeenCalledWith(expect.any(File), "quick");
+  expect(api.upload).toHaveBeenCalledWith(expect.any(File), "quick", expect.any(String));
 });
 
 test("marks a non-terminal job as delayed after the polling time budget is exhausted", async () => {

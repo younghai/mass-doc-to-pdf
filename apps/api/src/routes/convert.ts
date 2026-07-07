@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import type { Multipart } from "@fastify/multipart";
 import type { ConversionMode, DocFormat, QualityReport } from "@hwptopdf/shared";
 import { randomUUID } from "node:crypto";
 import { fileMeta } from "../detect/detectFormat.js";
@@ -33,6 +34,17 @@ function parseQualityMode(value: string | undefined): ConversionMode {
     default:
       return "precise";
   }
+}
+
+function cleanOptionalString(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed && trimmed.length > 0 ? trimmed : undefined;
+}
+
+function multipartFieldString(field: Multipart | Multipart[] | undefined): string | undefined {
+  const part = Array.isArray(field) ? field[0] : field;
+  if (!part || part.type !== "field" || typeof part.value !== "string") return undefined;
+  return cleanOptionalString(part.value);
 }
 
 function sourceObjectKey(userId: string, extension: string): string {
@@ -142,7 +154,7 @@ export function registerConvert(app: FastifyInstance, deps: AppDeps) {
     return reply.code(202).send(running);
   });
 
-  app.post("/api/convert", async (req, reply) => {
+  app.post<{ Querystring: { readonly qualityMode?: string; readonly batchId?: string } }>("/api/convert", async (req, reply) => {
     const user = await deps.getSessionUser(req);
     if (!user) return reply.code(401).send({ error: "unauthenticated" });
 
@@ -151,10 +163,11 @@ export function registerConvert(app: FastifyInstance, deps: AppDeps) {
       return reply.code(429).send({ error: "변환 대기 한도 초과. 완료된 작업을 확인 후 재시도하세요." });
     }
 
-    const qualityMode = parseQualityMode((req.query as { readonly qualityMode?: string }).qualityMode);
+    const qualityMode = parseQualityMode(req.query.qualityMode);
     const file = await req.file();
     if (!file) return reply.code(400).send({ error: "field 'file' required" });
     const data = await file.toBuffer();
+    const batchId = cleanOptionalString(req.query.batchId) ?? multipartFieldString(file.fields.batchId);
 
     let meta;
     try {
@@ -174,6 +187,7 @@ export function registerConvert(app: FastifyInstance, deps: AppDeps) {
       sizeBytes: data.length,
       sourceKey,
       qualityMode,
+      ...(batchId ? { batchId } : {}),
     });
 
     // Durable path: hand the job to the worker queue (survives API restarts).

@@ -1,4 +1,5 @@
 import {
+  type BatchDTO,
   MAX_UPLOAD_BYTES,
   type ConversionMode,
   type JobDTO,
@@ -46,10 +47,14 @@ export const api = {
   getStats(): Promise<StatsDTO> {
     return fetch("/api/stats").then((r) => asJson<StatsDTO>(r));
   },
-  async upload(file: File, qualityMode: ConversionMode = "precise"): Promise<JobDTO> {
+  getBatch(id: string): Promise<BatchDTO> {
+    return fetch(`/api/batches/${encodeURIComponent(id)}`).then((r) => asJson<BatchDTO>(r));
+  },
+  async upload(file: File, qualityMode: ConversionMode = "precise", batchId?: string): Promise<JobDTO> {
     const fd = new FormData();
     fd.append("file", file);
     const q = new URLSearchParams({ qualityMode });
+    if (batchId) q.set("batchId", batchId);
     const r = await fetch(`/api/convert?${q.toString()}`, { method: "POST", body: fd });
     return asJson<JobDTO>(r);
   },

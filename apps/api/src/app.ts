@@ -15,6 +15,7 @@ import type { JobService } from "./jobs/jobService.js";
 import type { JobQueue } from "./queue/jobQueue.js";
 import type { SessionUser } from "./auth/plugin.js";
 import type { PdfPreviewRenderer } from "./pdf/preview.js";
+import { registerBatches } from "./routes/batches.js";
 import { registerConvert } from "./routes/convert.js";
 import { registerJobs } from "./routes/jobs.js";
 import { registerStats } from "./routes/stats.js";
@@ -116,6 +117,7 @@ export function buildApp(deps: AppDeps): FastifyInstance {
       };
     });
     registerConvert(app, deps);
+    registerBatches(app, deps);
     registerJobs(app, deps);
     registerStats(app, deps);
   });

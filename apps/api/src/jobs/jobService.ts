@@ -1,5 +1,5 @@
 import type { PrismaClient } from "@prisma/client";
-import type { JobDTO, JobStatus, QualityStatus, StatsDTO, DocFormat } from "@hwptopdf/shared";
+import type { BatchDTO, BatchStatus, DocFormat, JobDTO, JobStatus, QualityStatus, StatsDTO } from "@hwptopdf/shared";
 
 export interface CreateInput {
   filename: string;
@@ -9,6 +9,7 @@ export interface CreateInput {
   sizeBytes: number;
   sourceKey: string;
   qualityMode?: string;
+  batchId?: string;
 }
 
 function toDTO(j: {
@@ -62,6 +63,10 @@ type ListInput = {
   readonly qualityStatus?: QualityStatus;
   readonly take?: number;
 };
+
+function batchStatusFromCounts(pending: number, queued: number, running: number): BatchStatus {
+  return pending + queued + running > 0 ? "active" : "completed";
+}
 
 export class JobService {
   constructor(private readonly prisma: PrismaClient) {}
@@ -197,6 +202,34 @@ export class JobService {
       queued,
       pending,
       successRate: success + failed ? success / (success + failed) : 0,
+    };
+  }
+
+  async getBatch(userId: string, batchId: string): Promise<BatchDTO | null> {
+    const rows = await this.prisma.conversionJob.findMany({
+      where: { userId, batchId },
+      select: { status: true, createdAt: true },
+      orderBy: { createdAt: "asc" },
+    });
+    const first = rows[0];
+    if (!first) return null;
+
+    const count = (status: JobStatus) => rows.filter((row) => row.status === status).length;
+    const pending = count("pending");
+    const queued = count("queued");
+    const running = count("running");
+    const success = count("success");
+    const failed = count("failed");
+    return {
+      id: batchId,
+      createdAt: first.createdAt.toISOString(),
+      status: batchStatusFromCounts(pending, queued, running),
+      total: rows.length,
+      pending,
+      queued,
+      running,
+      success,
+      failed,
     };
   }
 }
