@@ -305,7 +305,7 @@ RUN_E2E=1 pnpm test
 |---|---|
 | **durable queue** | `USE_QUEUE=1`이 모든 배포 설정(docker-compose, standalone env)에 누락돼 있었음. 전 파일 추가 |
 | **rate limiting** | `@fastify/rate-limit` — 전체 300/min, 인증 경로 60/min. `RATE_LIMIT_MAX` / `AUTH_RATE_LIMIT_MAX` 환경 변수로 조정 가능 |
-| **trustProxy** | nginx TLS termination 환경에서 OAuth 콜백, Secure 쿠키, IP 기반 rate limit가 올바르게 동작하도록 `trustProxy: true` 설정 |
+| **trustProxy** | nginx TLS termination 환경에서 OAuth 콜백, Secure 쿠키, IP 기반 rate limit가 올바르게 동작하도록 당시 `trustProxy: true` 설정. 2026-07-05 기본 1홉으로 변경 — §운영상 주의사항 참조 |
 | **품질 게이트 수정** | 비활성화된 엔진(`RHWP_CLI_ENABLED=0` 등)이 "실패 시도"로 기록돼 모든 변환을 `review`로 강등하던 버그 수정. 비활성 엔진은 체인에서 완전 제외 |
 | **standalone 패키지** | `newsletter/`, `odysseus/` 로컬 워크스페이스가 tarball에 포함되던 문제 수정. 릴리스 재생성 후 전체 리허설 통과 확인 |
 

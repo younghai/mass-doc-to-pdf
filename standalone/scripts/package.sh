@@ -48,10 +48,11 @@ COPYFILE_DISABLE=1 tar \
 # Regression guard: the unrelated newsletter/odysseus workspaces leaked into a
 # release tarball once (see README "2026-06-11"). Fail loudly if any forbidden path
 # — those workspaces, dependency trees, or real secrets — survived the excludes,
-# so a future exclude regression can't ship silently. (standalone/env.example has no
-# leading dot, so the .env pattern below never flags the legitimate template.)
+# so a future exclude regression can't ship silently. Example/sample env templates
+# are allowed, but real dot-env files remain forbidden.
 FORBIDDEN="$(tar -tzf "$OUT_DIR/mass-doc-to-pdf-standalone.tar.gz" \
-  | grep -Ei '(^|/)(newsletter|odysseus|node_modules)/|(^|/)\.env(\.|$)' || true)"
+  | grep -Ei '(^|/)(newsletter|odysseus|node_modules)/|(^|/)\.env(\.|$)' \
+  | grep -viE '\.(example|sample)$' || true)"
 if [ -n "$FORBIDDEN" ]; then
   echo "ERROR: release archive contains forbidden paths (packaging exclude regressed):" >&2
   printf '%s\n' "$FORBIDDEN" | head -20 >&2
