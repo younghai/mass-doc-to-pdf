@@ -79,6 +79,7 @@ describe("runWorkerOnce", () => {
     const job = await jobs.get(userId, id);
     expect(job?.status).toBe("success");
     expect(job?.engine).toBe("rhwp");
+    expect(job?.qualityStatus).toBe("review");
     expect(storage.map.has(`${userId}/out/${id}.pdf`)).toBe(true);
     expect(storage.map.has(`${userId}/report/${id}.json`)).toBe(true);
     // The first-page PNG is pre-rendered at conversion time for the preview route.
@@ -113,7 +114,7 @@ describe("runWorkerOnce", () => {
     await runWorkerOnce(deps, "w"); // attempt 2 -> give up
     const job = await jobs.get(userId, id);
     expect(job?.status).toBe("failed");
-    expect(job?.error).toMatch(/boom/);
+    expect(job?.error).toBe("렌더링 실패: 다른 품질 모드로 재시도하거나 원본 문서를 다시 저장하세요.");
   });
 
   it("permanently fails password-protected jobs without burning retries", async () => {
@@ -139,6 +140,44 @@ describe("runWorkerOnce", () => {
     expect(row?.lockedAt).toBeNull();
   });
 
+  it("permanently fails unsupported-format jobs without burning retries", async () => {
+    const storage = new MemoryStorage();
+    const queue = new JobQueue(db.prisma);
+    const engine: Converter = {
+      name: "rhwp",
+      async convert() { throw new Error("unsupported format"); },
+    };
+    const deps: WorkerRuntimeDeps = { registry: registryWith(engine), storage, jobs, queue };
+
+    const id = await seedQueued(storage, queue);
+    expect(await runWorkerOnce(deps, "w")).toBe(true);
+
+    const job = await jobs.get(userId, id);
+    expect(job?.status).toBe("failed");
+    const row = await db.prisma.conversionJob.findUnique({ where: { id } });
+    expect(row?.attempts).toBe(0);
+    expect(row?.lockedAt).toBeNull();
+  });
+
+  it("permanently fails corrupt-file jobs without burning retries", async () => {
+    const storage = new MemoryStorage();
+    const queue = new JobQueue(db.prisma);
+    const engine: Converter = {
+      name: "rhwp",
+      async convert() { throw new Error("file is corrupt"); },
+    };
+    const deps: WorkerRuntimeDeps = { registry: registryWith(engine), storage, jobs, queue };
+
+    const id = await seedQueued(storage, queue);
+    expect(await runWorkerOnce(deps, "w")).toBe(true);
+
+    const job = await jobs.get(userId, id);
+    expect(job?.status).toBe("failed");
+    const row = await db.prisma.conversionJob.findUnique({ where: { id } });
+    expect(row?.attempts).toBe(0);
+    expect(row?.lockedAt).toBeNull();
+  });
+
   it("still retries transient failures (e.g. sidecar down)", async () => {
     const storage = new MemoryStorage();
     const queue = new JobQueue(db.prisma);
@@ -155,6 +194,48 @@ describe("runWorkerOnce", () => {
     expect((await jobs.get(userId, id))?.status).toBe("queued");
     const row = await db.prisma.conversionJob.findUnique({ where: { id } });
     expect(row?.attempts).toBe(1);
+  });
+
+  it("fails a job when the quality gate rejects it (office+precise+fallback) without burning retries", async () => {
+    const storage = new MemoryStorage();
+    const queue = new JobQueue(db.prisma);
+    // builtin-office grades as "fallback"; an office doc in precise mode trips the
+    // gate. The queue path must fail this deterministically, exactly like the
+    // inline /api/convert path does — not silently store a PDF and mark success.
+    const engine: Converter = { name: "builtin-office", async convert() { return Buffer.from("%PDF-1.7"); } };
+    const deps: WorkerRuntimeDeps = { registry: registryWith(engine), storage, jobs, queue };
+
+    const sourceKey = `${userId}/src/a.docx`;
+    await storage.put(sourceKey, Buffer.from("docx-bytes"));
+    const job = await db.prisma.conversionJob.create({
+      data: {
+        userId,
+        filename: "a.docx",
+        format: "office",
+        extension: "docx",
+        mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        sizeBytes: 10,
+        sourceKey,
+        qualityMode: "precise",
+        status: "pending",
+      },
+    });
+    await queue.enqueue(job.id);
+
+    expect(await runWorkerOnce(deps, "w")).toBe(true);
+
+    const done = await jobs.get(userId, job.id);
+    expect(done?.status).toBe("failed");
+    expect(done?.error).toMatch(/품질 게이트/);
+
+    // A deterministic gate rejection must not burn the retry budget or publish a PDF,
+    // but the report is still persisted so the job detail can explain the verdict.
+    const row = await db.prisma.conversionJob.findUnique({ where: { id: job.id } });
+    expect(row?.qualityStatus).toBe("review");
+    expect(row?.attempts).toBe(0);
+    expect(row?.lockedAt).toBeNull();
+    expect(storage.map.has(`${userId}/out/${job.id}.pdf`)).toBe(false);
+    expect(storage.map.has(`${userId}/report/${job.id}.json`)).toBe(true);
   });
 });
 
@@ -184,7 +265,7 @@ describe("processConversion", () => {
     const result = await processConversion({ registry: registryWith(engine), storage, jobs }, job);
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.error).toMatch(/NoSuchKey/);
+      expect(result.error).toBe("렌더링 실패: 다른 품질 모드로 재시도하거나 원본 문서를 다시 저장하세요.");
     }
   });
 });
@@ -195,14 +276,13 @@ describe("runWorkerLoop", () => {
     // Iteration 1 throws (transient DB/storage outage); later iterations return
     // null so the loop idles. A crash here would mimic the systemd/compose
     // claim -> crash -> restart loop the catch is meant to prevent.
-    const queue = {
-      async claimNext() {
-        claimCalls += 1;
-        if (claimCalls === 1) throw new Error("transient db outage");
-        return null;
-      },
-      async requeueStale() { return 0; },
-    } as unknown as JobQueue;
+    const queue = new JobQueue(db.prisma);
+    queue.claimNext = async () => {
+      claimCalls += 1;
+      if (claimCalls === 1) throw new Error("transient db outage");
+      return null;
+    };
+    queue.requeueStale = async () => 0;
     const engine: Converter = { name: "x", async convert() { return Buffer.from(""); } };
     const deps: WorkerRuntimeDeps = { registry: registryWith(engine), storage: new MemoryStorage(), jobs, queue };
 

@@ -116,11 +116,13 @@ export function pdfTextChars(pdf: Buffer): number | undefined {
   // Inflate each FlateDecode content stream so glyphs in compressed streams count
   // too. Non-FlateDecode streams throw and are skipped.
   for (const m of pdf.toString("latin1").matchAll(PDF_STREAM_RE)) {
-    const start = m.index! + m[0].indexOf(m[1]);
+    if (m.index === undefined) continue;
+    const start = m.index + m[0].indexOf(m[1]);
     const raw = pdf.subarray(start, start + m[1].length);
     try {
       buffers.push(inflateSync(raw).toString("latin1"));
-    } catch {
+    } catch (err) {
+      if (!(err instanceof Error)) throw err;
       // Not a FlateDecode stream (or corrupt) — ignore.
     }
   }
@@ -179,6 +181,8 @@ function isRhwpQualityRiskEngine(engine: string): boolean {
   return engine === "rhwp" || engine === "rhwp-cli-pdf" || engine === "rhwp-cli-raster";
 }
 
+export type NormalizedQualityReport = QualityReport & { readonly status: QualityStatus };
+
 function intrinsicWarnings(input: {
   readonly format: DocFormat;
   readonly selectedEngine: string;
@@ -212,7 +216,7 @@ export function buildQualityReport(input: {
   readonly attempts: readonly QualityAttempt[];
   readonly warnings: readonly string[];
   readonly createdAt?: string;
-}): QualityReport {
+}): NormalizedQualityReport {
   const pageCount = pdfPageCount(input.pdf);
   const textChars = pdfTextChars(input.pdf);
   const grade = gradeForEngine(input.selectedEngine);
@@ -254,17 +258,24 @@ export function buildQualityReport(input: {
   };
 }
 
+// Quality gate: an office document converted in precise mode that only reached a
+// fallback engine (builtin text extraction) has lost its original layout, so the
+// PDF must not be published as a success. Both conversion paths — the inline
+// /api/convert handler and the durable queue worker — MUST consume this single
+// predicate; keeping a private copy in one path is what let the two paths grade
+// the same file differently.
+export function shouldRejectQuality(report: QualityReport): boolean {
+  return report.format === "office" && report.mode === "precise" && report.grade === "fallback";
+}
+
+export function qualityGateReason(report: QualityReport): string {
+  return `품질 게이트 실패: ${report.recommendedAction ?? "원본 서식 보존 엔진으로 재시도하세요."}`;
+}
+
 export function normalizeQualityReport(input: {
-  readonly report: QualityReport | undefined;
-  readonly jobId: string;
-  readonly filename: string;
-  readonly format: DocFormat;
-  readonly mode: ConversionMode;
-  readonly fallbackEngine: string;
-  readonly pdf: Buffer;
-  readonly sourceBytes: number;
-  readonly durationMs: number;
-}): QualityReport {
+  readonly report: QualityReport | undefined; readonly jobId: string; readonly filename: string; readonly format: DocFormat;
+  readonly mode: ConversionMode; readonly fallbackEngine: string; readonly pdf: Buffer; readonly sourceBytes: number; readonly durationMs: number;
+}): NormalizedQualityReport {
   if (!input.report) {
     return buildQualityReport({
       jobId: input.jobId,
@@ -279,18 +290,19 @@ export function normalizeQualityReport(input: {
     });
   }
 
+  const report = input.report;
+  const pageCount = report.checks.pageCount ?? pdfPageCount(input.pdf);
+  const textChars = report.checks.textChars ?? pdfTextChars(input.pdf);
+  const status = report.status ?? statusFor({ grade: report.grade, attempts: report.attempts, warnings: report.warnings, pageCount });
+
   return {
-    ...input.report,
+    ...report,
     jobId: input.jobId,
     filename: input.filename,
     format: input.format,
-    mode: input.report.mode ?? input.mode,
-    checks: {
-      ...input.report.checks,
-      pdfBytes: input.pdf.byteLength,
-      pageCount: input.report.checks.pageCount ?? pdfPageCount(input.pdf),
-      sourceBytes: input.sourceBytes,
-      textChars: input.report.checks.textChars ?? pdfTextChars(input.pdf),
-    },
+    mode: report.mode ?? input.mode,
+    status,
+    recommendedAction: report.recommendedAction ?? recommendedAction(status, report.grade),
+    checks: { ...report.checks, pdfBytes: input.pdf.byteLength, pageCount, sourceBytes: input.sourceBytes, textChars },
   };
 }

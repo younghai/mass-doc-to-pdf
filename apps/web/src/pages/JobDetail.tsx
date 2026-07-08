@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
+import { confirmDelete } from "../confirm";
 import { StatusPill } from "../components/StatusPill";
 import { humanSize, formatDate } from "../format";
 import type { QualityReport } from "@hwptopdf/shared";
@@ -154,7 +155,7 @@ export function JobDetail() {
             <button
               className="btn ghost"
               type="button"
-              onClick={() => deleteMutation.mutate()}
+              onClick={() => { if (confirmDelete(job.filename)) deleteMutation.mutate(); }}
               disabled={deleteMutation.isPending}
             >
               삭제
@@ -185,7 +186,7 @@ export function JobDetail() {
             <button
               className="btn ghost"
               type="button"
-              onClick={() => deleteMutation.mutate()}
+              onClick={() => { if (confirmDelete(job.filename)) deleteMutation.mutate(); }}
               disabled={deleteMutation.isPending}
             >
               삭제

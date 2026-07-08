@@ -53,6 +53,30 @@ describe("JobService", () => {
     expect(failed.every((j) => j.status === "failed")).toBe(true);
   });
 
+  it("stores successful job qualityStatus and filters review jobs", async () => {
+    const owner = await db.prisma.user.create({ data: { email: "quality-owner@x.c" } });
+    const review = await svc.create(owner.id, baseInput("needs-review.docx"));
+    const passed = await svc.create(owner.id, baseInput("passed.docx"));
+
+    const updated = await svc.markSuccess(review.id, {
+      engine: "rhwp",
+      durationMs: 150,
+      outputKey: "out/review",
+      qualityStatus: "review",
+    });
+    await svc.markSuccess(passed.id, {
+      engine: "rhwp",
+      durationMs: 100,
+      outputKey: "out/passed",
+      qualityStatus: "passed",
+    });
+
+    expect(updated.qualityStatus).toBe("review");
+    expect((await svc.get(owner.id, review.id))?.qualityStatus).toBe("review");
+    const reviewJobs = await svc.list(owner.id, { status: "success", qualityStatus: "review" });
+    expect(reviewJobs.map((j) => j.filename)).toEqual(["needs-review.docx"]);
+  });
+
   it("get returns null for another user's job", async () => {
     const other = await db.prisma.user.create({ data: { email: "other@x.c" } });
     const mine = await svc.create(userId, baseInput("mine.docx"));

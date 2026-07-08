@@ -3,3 +3,17 @@
 .git
 tmp
 *.log
+
+# Never ship real secrets into the build context (defense-in-depth even though no
+# Dockerfile currently does `COPY . .`). Keep the example templates available.
+.env
+.env.*
+!.env.example
+!.env.production.example
+
+# Local-only state and data that must not enter an image.
+data
+.omc
+.omx
+.claude
+.codex

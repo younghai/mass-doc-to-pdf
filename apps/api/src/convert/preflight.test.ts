@@ -9,6 +9,7 @@ import type { EngineConfig } from "./registry.js";
 const base: EngineConfig = {
   gotenbergUrl: "http://g",
   hwpSidecarUrl: "http://h",
+  builtinTimeoutMs: 120_000,
   officeEngine: "gotenberg",
   rhwp: { enabled: true, pythonPath: "python3", timeoutMs: 120_000, fontPaths: [] },
   rhwpCli: { enabled: true, cliPath: "rhwp", timeoutMs: 120_000, fontPaths: [], mode: "pdf" },

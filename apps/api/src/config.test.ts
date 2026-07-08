@@ -80,6 +80,16 @@ describe("loadEngineConfig", () => {
     expect(cfg.officeEngine).toBe("builtin");
   });
 
+  it("defaults the builtin engine timeout to 120000ms", () => {
+    const cfg = loadEngineConfig({});
+    expect(cfg.builtinTimeoutMs).toBe(120_000);
+  });
+
+  it("reads the builtin engine timeout from BUILTIN_TIMEOUT_MS", () => {
+    const cfg = loadEngineConfig({ BUILTIN_TIMEOUT_MS: "90000" });
+    expect(cfg.builtinTimeoutMs).toBe(90_000);
+  });
+
   it("includes commercial config only when fully specified", () => {
     const cfg = loadEngineConfig({
       HANCOM_BASE_URL: "http://hancom",
@@ -147,5 +157,40 @@ describe("loadAppConfig", () => {
         WEB_ORIGIN: "http://172.19.1.151:8081",
       }),
     ).toThrow(/Google OAuth operation login is not ready/);
+  });
+
+  describe("trustProxy", () => {
+    it("defaults to trusting a single reverse-proxy hop (nginx)", () => {
+      // The old hardcoded `true` trusted the entire X-Forwarded-For chain, letting
+      // a client spoof req.ip and bypass per-IP rate limiting. One hop is the safe
+      // default for the documented single-nginx topology.
+      expect(loadAppConfig({ AUTH_SECRET: "s" }).trustProxy).toBe(1);
+    });
+
+    it("disables proxy trust when TRUST_PROXY=0 (matches README guidance)", () => {
+      expect(loadAppConfig({ AUTH_SECRET: "s", TRUST_PROXY: "0" }).trustProxy).toBe(false);
+    });
+
+    it("trusts N hops when TRUST_PROXY is a positive integer", () => {
+      expect(loadAppConfig({ AUTH_SECRET: "s", TRUST_PROXY: "2" }).trustProxy).toBe(2);
+    });
+
+    it("trusts the whole chain when TRUST_PROXY=true (legacy multi-proxy opt-in)", () => {
+      expect(loadAppConfig({ AUTH_SECRET: "s", TRUST_PROXY: "true" }).trustProxy).toBe(true);
+    });
+
+    it("falls back to a single hop for non-numeric junk", () => {
+      expect(loadAppConfig({ AUTH_SECRET: "s", TRUST_PROXY: "yes-please" }).trustProxy).toBe(1);
+    });
+  });
+
+  describe("maxActiveJobsPerUser", () => {
+    it("defaults the per-user active-job ceiling to 50", () => {
+      expect(loadAppConfig({ AUTH_SECRET: "s" }).maxActiveJobsPerUser).toBe(50);
+    });
+
+    it("reads the ceiling from MAX_ACTIVE_JOBS_PER_USER", () => {
+      expect(loadAppConfig({ AUTH_SECRET: "s", MAX_ACTIVE_JOBS_PER_USER: "10" }).maxActiveJobsPerUser).toBe(10);
+    });
   });
 });

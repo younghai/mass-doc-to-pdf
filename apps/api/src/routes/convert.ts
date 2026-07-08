@@ -1,9 +1,16 @@
 import type { FastifyInstance } from "fastify";
+import type { Multipart } from "@fastify/multipart";
 import type { ConversionMode, DocFormat, QualityReport } from "@hwptopdf/shared";
 import { randomUUID } from "node:crypto";
 import { fileMeta } from "../detect/detectFormat.js";
-import { normalizeQualityReport, previewObjectKey, reportObjectKey } from "../convert/quality.js";
-import { errorMessage } from "../convert/failure.js";
+import {
+  normalizeQualityReport,
+  previewObjectKey,
+  qualityGateReason,
+  reportObjectKey,
+  shouldRejectQuality,
+} from "../convert/quality.js";
+import { errorMessage, rawErrorMessage } from "../convert/failure.js";
 import { defaultPreviewRenderer } from "../pdf/preview.js";
 import {
   ConversionError,
@@ -15,12 +22,8 @@ import type { AppDeps } from "../app.js";
 
 class QualityGateError extends ConversionError {
   constructor(public readonly report: QualityReport) {
-    super(report.selectedEngine, `품질 게이트 실패: ${report.recommendedAction ?? "원본 서식 보존 엔진으로 재시도하세요."}`);
+    super(report.selectedEngine, qualityGateReason(report));
   }
-}
-
-function shouldRejectQuality(report: QualityReport): boolean {
-  return report.format === "office" && report.mode === "precise" && report.grade === "fallback";
 }
 
 function parseQualityMode(value: string | undefined): ConversionMode {
@@ -33,9 +36,24 @@ function parseQualityMode(value: string | undefined): ConversionMode {
   }
 }
 
+function cleanOptionalString(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed && trimmed.length > 0 ? trimmed : undefined;
+}
+
+function multipartFieldString(field: Multipart | Multipart[] | undefined): string | undefined {
+  const part = Array.isArray(field) ? field[0] : field;
+  if (!part || part.type !== "field" || typeof part.value !== "string") return undefined;
+  return cleanOptionalString(part.value);
+}
+
 function sourceObjectKey(userId: string, extension: string): string {
   const suffix = extension.replace(/[^a-z0-9]/gi, "").toLowerCase() || "bin";
   return `${userId}/src/${Date.now()}-${randomUUID()}.${suffix}`;
+}
+
+function logRawConversionFailure(jobId: string, err: unknown): void {
+  console.warn("conversion failed", { jobId, rawError: rawErrorMessage(err) });
 }
 
 async function finishConversion(
@@ -83,11 +101,13 @@ async function finishConversion(
       const renderer = deps.pdfPreview ?? defaultPreviewRenderer();
       const png = await renderer.renderFirstPagePng(result.pdf);
       await deps.storage.put(previewObjectKey(input.userId, input.jobId), png, "image/png");
-    } catch {
-      // best-effort only
+    } catch (err) {
+      const rawError = err instanceof Error ? err.message : rawErrorMessage(err);
+      console.warn("preview pre-render failed", { jobId: input.jobId, rawError });
     }
     await deps.jobs.markSuccess(input.jobId, {
       engine: report.selectedEngine,
+      qualityStatus: report.status,
       durationMs,
       outputKey,
     });
@@ -99,17 +119,19 @@ async function finishConversion(
         "application/json",
       );
     }
+    logRawConversionFailure(input.jobId, err);
     await deps.jobs.markFailed(input.jobId, {
       engine: err instanceof QualityGateError ? err.report.selectedEngine : input.engine.name,
+      qualityStatus: err instanceof QualityGateError ? err.report.status : "failed",
       durationMs: Date.now() - started,
       error: errorMessage(err),
     });
   }
 }
 
-const MAX_ACTIVE_JOBS_PER_USER = Number(process.env.MAX_ACTIVE_JOBS_PER_USER ?? 50);
-
 export function registerConvert(app: FastifyInstance, deps: AppDeps) {
+  const maxActiveJobsPerUser = deps.maxActiveJobsPerUser ?? 50;
+
   app.post("/api/jobs/:id/retry", async (req, reply) => {
     const user = await deps.getSessionUser(req);
     if (!user) return reply.code(401).send({ error: "unauthenticated" });
@@ -132,25 +154,27 @@ export function registerConvert(app: FastifyInstance, deps: AppDeps) {
     return reply.code(202).send(running);
   });
 
-  app.post("/api/convert", async (req, reply) => {
+  app.post<{ Querystring: { readonly qualityMode?: string; readonly batchId?: string } }>("/api/convert", async (req, reply) => {
     const user = await deps.getSessionUser(req);
     if (!user) return reply.code(401).send({ error: "unauthenticated" });
 
     const activeCount = await deps.jobs.countActive(user.id);
-    if (activeCount >= MAX_ACTIVE_JOBS_PER_USER) {
+    if (activeCount >= maxActiveJobsPerUser) {
       return reply.code(429).send({ error: "변환 대기 한도 초과. 완료된 작업을 확인 후 재시도하세요." });
     }
 
-    const qualityMode = parseQualityMode((req.query as { readonly qualityMode?: string }).qualityMode);
+    const qualityMode = parseQualityMode(req.query.qualityMode);
     const file = await req.file();
     if (!file) return reply.code(400).send({ error: "field 'file' required" });
     const data = await file.toBuffer();
+    const batchId = cleanOptionalString(req.query.batchId) ?? multipartFieldString(file.fields.batchId);
 
     let meta;
     try {
       meta = fileMeta(file.filename, data.subarray(0, 8));
-    } catch (e) {
-      return reply.code(400).send({ error: (e as Error).message });
+    } catch (err) {
+      if (err instanceof Error) return reply.code(400).send({ error: err.message });
+      throw err;
     }
 
     const sourceKey = sourceObjectKey(user.id, meta.extension);
@@ -163,6 +187,7 @@ export function registerConvert(app: FastifyInstance, deps: AppDeps) {
       sizeBytes: data.length,
       sourceKey,
       qualityMode,
+      ...(batchId ? { batchId } : {}),
     });
 
     // Durable path: hand the job to the worker queue (survives API restarts).

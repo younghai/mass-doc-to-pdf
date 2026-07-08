@@ -92,6 +92,7 @@ export interface JobDTO {
   sizeBytes: number;
   status: JobStatus;
   engine: string | null;
+  qualityStatus?: QualityStatus;
   durationMs: number | null;
   error: string | null;
   createdAt: string; // ISO
@@ -106,3 +107,5 @@ export interface StatsDTO {
   pending: number;
   successRate: number; // 0..1, success / (success+failed)
 }
+
+export * from "./meeting.js";

@@ -30,6 +30,7 @@ export function loadEngineConfig(env: NodeJS.ProcessEnv): EngineConfig {
     gotenbergUrl: env.GOTENBERG_URL ?? "http://localhost:3000",
     hwpSidecarUrl: env.HWP_SIDECAR_URL ?? "http://localhost:8080",
     hwpSidecarTimeoutMs: Number(env.SIDECAR_TIMEOUT_MS ?? 150_000),
+    builtinTimeoutMs: Number(env.BUILTIN_TIMEOUT_MS ?? 120_000),
     officeEngine: officeEngine(env),
     rhwp: {
       enabled: env.RHWP_ENABLED !== "0",
@@ -86,6 +87,28 @@ export interface AppConfig {
   auth: AuthConfigValues;
   webOrigin: string;
   port: number;
+  /** Fastify trustProxy: how much of the X-Forwarded-For chain to trust. */
+  trustProxy: boolean | number;
+  /** Max concurrent (pending/running) jobs a single user may hold before 429. */
+  maxActiveJobsPerUser: number;
+}
+
+/**
+ * How many reverse-proxy hops Fastify should trust when deriving req.ip / req.protocol.
+ * Trusting the *entire* X-Forwarded-For chain (the old hardcoded `true`) lets a client
+ * spoof its IP and defeat per-IP rate limiting, so we default to a single hop — correct
+ * for the documented single-nginx topology. TRUST_PROXY=0 turns trust off entirely;
+ * a positive integer trusts that many hops; `true` opts back into whole-chain trust for
+ * multi-proxy operators who accept the risk.
+ */
+export function parseTrustProxy(env: NodeJS.ProcessEnv): boolean | number {
+  const raw = env.TRUST_PROXY;
+  if (raw === undefined || raw === "") return 1;
+  const lower = raw.toLowerCase();
+  if (raw === "0" || lower === "false") return false;
+  if (lower === "true") return true;
+  const hops = Number(raw);
+  return Number.isInteger(hops) && hops > 0 ? hops : 1;
 }
 
 export function loadAppConfig(env: NodeJS.ProcessEnv): AppConfig {
@@ -126,5 +149,7 @@ export function loadAppConfig(env: NodeJS.ProcessEnv): AppConfig {
     },
     webOrigin: env.WEB_ORIGIN ?? "http://localhost:5173",
     port: Number(env.PORT ?? 8000),
+    trustProxy: parseTrustProxy(env),
+    maxActiveJobsPerUser: Number(env.MAX_ACTIVE_JOBS_PER_USER ?? 50),
   };
 }
