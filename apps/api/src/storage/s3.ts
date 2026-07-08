@@ -1,10 +1,13 @@
 import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { createReadStream } from "node:fs";
 import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, normalize, relative, sep } from "node:path";
+import { Readable } from "node:stream";
 
 export interface Storage {
   put(key: string, body: Buffer, contentType: string): Promise<void>;
   get(key: string): Promise<Uint8Array>;
+  getStream?(key: string): Promise<Readable>;
   delete(key: string): Promise<void>;
 }
 
@@ -37,6 +40,10 @@ export class LocalFileStorage implements Storage {
     return readFile(safeObjectPath(this.root, key));
   }
 
+  async getStream(key: string): Promise<Readable> {
+    return createReadStream(safeObjectPath(this.root, key));
+  }
+
   async delete(key: string): Promise<void> {
     await unlink(safeObjectPath(this.root, key)).catch((err: NodeJS.ErrnoException) => {
       if (err.code !== "ENOENT") throw err;
@@ -58,12 +65,27 @@ export class S3Storage implements Storage {
 
   async get(key: string): Promise<Uint8Array> {
     const res = await this.client.send(new GetObjectCommand({ Bucket: this.bucket, Key: key }));
-    return (res.Body as { transformToByteArray(): Promise<Uint8Array> }).transformToByteArray();
+    if (!hasByteArrayTransform(res.Body)) {
+      throw new Error("S3 object body does not support byte-array reads");
+    }
+    return res.Body.transformToByteArray();
+  }
+
+  async getStream(key: string): Promise<Readable> {
+    const res = await this.client.send(new GetObjectCommand({ Bucket: this.bucket, Key: key }));
+    if (res.Body instanceof Readable) return res.Body;
+    if (hasByteArrayTransform(res.Body)) return Readable.from(await res.Body.transformToByteArray());
+    throw new Error("S3 object body does not support streaming reads");
   }
 
   async delete(key: string): Promise<void> {
     await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: key }));
   }
+}
+
+function hasByteArrayTransform(value: unknown): value is { transformToByteArray(): Promise<Uint8Array> } {
+  if (typeof value !== "object" || value === null) return false;
+  return typeof Reflect.get(value, "transformToByteArray") === "function";
 }
 
 export function makeS3Client(cfg: {
