@@ -308,6 +308,21 @@ RUN_E2E=1 pnpm test
 | **품질 게이트 수정** | 비활성화된 엔진(`RHWP_CLI_ENABLED=0` 등)이 "실패 시도"로 기록돼 모든 변환을 `review`로 강등하던 버그 수정. 비활성 엔진은 체인에서 완전 제외 |
 | **standalone 패키지** | `newsletter/`, `odysseus/` 로컬 워크스페이스가 tarball에 포함되던 문제 수정. 릴리스 재생성 후 전체 리허설 통과 확인 |
 
+## 2026-10-18 rhwp 엔진 업데이트 (rhwp-python 0.8.1)
+
+HWP/HWPX 정밀 변환 엔진 rhwp를 최신 바인딩으로 올렸습니다.
+
+| 항목 | 내용 |
+|---|---|
+| **버전** | `rhwp-python` 0.8.0 → **0.8.1** (렌더 코어 0.7.16 → 0.7.17). PyPI 커뮤니티 바인딩 기준 현재 설치 가능한 최신 |
+| **변경 성격** | PATCH 릴리스 — 공개 API·IR schema 불변. 상류 HWPX 직렬화 수정(edwardkim/rhwp#1451, 도형 shapeComment) 흡수 |
+| **핀 갱신** | `apps/api/Dockerfile`, `standalone/scripts/install-ubuntu.sh`, `standalone/scripts/install-rhwp-worker.sh`(0.5.1 → 0.8.1, 이전 범프 때 누락) |
+| **freetype 워크어라운드** | manylinux 휠(x86_64·aarch64 모두)이 여전히 `FT_Palette_Select` 이전 freetype을 번들 — distro freetype symlink 워크어라운드 유지 필요 재확인, 기존 glob이 양 아키텍처 매칭 |
+| **회귀 검증** | macOS arm64 실측: 품질 코퍼스 11건 변환 성공. 0.8.0 대비 페이지 수·추출 텍스트 일치(1종은 줄바꿈 위치만 변동 — 상류 조판 개선) |
+| **OPEN-001** | "보고서 양식.hwp" PartialTable 오버플로는 0.8.1에서도 미해결 (상류 이슈 추적 중) |
+
+상세 검증 내역은 [`docs/changes/2026-10-18-rhwp-0.8.1-upgrade.md`](docs/changes/2026-10-18-rhwp-0.8.1-upgrade.md)을 참고하세요.
+
 ## 향후 고도화
 
 - rhwp-cli raster 모드: 이미지 PDF 기반 시각 보존 fallback

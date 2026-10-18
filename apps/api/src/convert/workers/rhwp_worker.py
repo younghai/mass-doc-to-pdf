@@ -21,7 +21,7 @@ def _emit(payload: dict[str, str | int]) -> None:
 def _apply_font_paths(rhwp) -> str | None:
     """Best-effort, forward-compat probe for a rhwp-python font API.
 
-    NOTE: as of rhwp-python 0.7.0/0.8.0 none of these entry points exist and the
+    NOTE: as of rhwp-python 0.7.0-0.8.1 none of these entry points exist and the
     native core does NOT read the RHWP_FONT_PATHS env var. Fonts are resolved by
     the core from a `ttfs/<provider>` directory relative to the process cwd (the
     caller symlinks fonts into `ttfs/hwp/`; see engines/rhwp.ts) plus the system
