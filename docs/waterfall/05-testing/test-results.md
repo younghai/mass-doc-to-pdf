@@ -147,14 +147,15 @@ const hwpPrecise: Converter[] = [
 
 | 항목 | 내용 |
 |------|------|
-| 상태 | 미결 (오픈) |
+| 상태 | **해결 (상류 v0.8.x, 2026-10-22 확인)** — rhwp-python 바인딩 릴리스 대기 |
 | 우선순위 | 낮음 |
 | 증상 | 복잡한 중첩 표 문서(14KB) 변환 실패 (`status='failed'`) |
-| 원인 | rhwp 표 레이아웃 오버플로우 처리 한계 (`type=PartialTable, bottom=0.0`) |
-| 재테스트 (2026-06-26) | **rhwp-python 0.8.0(core 0.7.16)에서도 동일 실패** — 0.7.0(core 0.7.13)과 같은 `PartialTable LAYOUT_OVERFLOW`. 0.8.0 업그레이드로 해결되지 않음 (실측: 워커로 직접 변환) |
-| 상류 리포트 | edwardkim/rhwp#1583 — 모든 블록 타입이 `bottom=0.0`(본문 영역 높이=0 가설). rhwp-cli v0.7.17에서도 재현. 초안: `docs/upstream/rhwp-partialtable-overflow-issue.md` |
-| 해결 조건 | 상류 rhwp의 본문 높이 산정 수정(#1583) OR Hancom sidecar 엔진 활성화 |
-| 임시 대응 | 사용자에게 `status='failed'` + 상세 에러 메시지 표시. 수동 변환 안내 |
+| 원인 | PageDef=0(구역정보 누락) → 본문 영역 높이 0 → 전 블록 `bottom=0.0` 오버플로 + 0크기 SVG (상류 코드 판독으로 확정) |
+| 재테스트 (2026-06-26) | rhwp-python 0.8.0(core 0.7.16)에서도 동일 실패 (실측: 워커로 직접 변환) |
+| 재테스트 (2026-10-18) | rhwp-python 0.8.1(core 0.7.17)에서도 동일 실패 — 바인딩 핀이 수정 커밋 이전 스냅샷 |
+| 상류 리포트 | edwardkim/rhwp#1583 — **CLOSED (COMPLETED)**. 원인 특정 + 렌더링측 A4/기본여백 폴백 수정이 PR #1817(반영 `e92ce595`)로 머지됨 |
+| 해결 확인 (2026-10-22) | **rhwp-cli v0.8.7 프리빌트(macos-aarch64, sha256 검증)로 원본 파일 변환 성공**: exit 0, `LAYOUT_OVERFLOW` 0건, PDF 1.7 2페이지 44,273B, 양식 본문 정상 추출. 일반 문서(사업계획서.hwp 14p)도 정상 |
+| 해결 조건 | ~~상류 rhwp의 본문 높이 산정 수정~~ **충족**. rhwp-python이 v0.8.x 코어를 번들한 릴리스를 내보내면 워커 경로도 해제됨. 그 전까지는 rhwp-cli v0.8.7 활성화(`RHWP_CLI_ENABLED=1`)로 즉시 해결 가능 |
 | 영향 범위 | 복잡한 표 레이아웃이 포함된 HWP 문서에 한정 |
 
 ### OPEN-002: E2E 테스트 환경 의존성
