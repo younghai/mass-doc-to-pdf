@@ -6,7 +6,7 @@ INSTALL_DIR="${RHWP_CLI_INSTALL_DIR:-$ROOT/bin}"
 # Pin to a released tag for reproducible CLI quality. `main` is still accepted
 # but disables the prebuilt-binary path (no release assets exist for it) and
 # forces a source build.
-VERSION="${RHWP_CLI_VERSION:-v0.7.17}"
+VERSION="${RHWP_CLI_VERSION:-v0.8.7}"
 REPO_URL="${RHWP_CLI_REPO_URL:-https://github.com/edwardkim/rhwp.git}"
 SOURCE_DIR="${RHWP_CLI_SOURCE_DIR:-$ROOT/.rhwp-src}"
 

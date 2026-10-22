@@ -1,5 +1,14 @@
 # [PDF] 특정 HWP에서 본문 영역 높이가 0(`bottom=0.0`)으로 잡혀 전 페이지 LAYOUT_OVERFLOW → `SVG has an invalid size`로 PDF 변환 실패
 
+> **해결 (2026-10-22 갱신)** — 이슈는 [edwardkim/rhwp#1583](https://github.com/edwardkim/rhwp/issues/1583)로
+> 제출되었고 **CLOSED (COMPLETED)**. 상류 협업자가 원인을 PageDef=0(구역정보 누락/손상)
+> → `content_bottom=0`으로 확정, 렌더링측 A4/기본여백 폴백 수정을 PR #1817(반영 커밋
+> `e92ce595`)로 머지했다. v0.8.7 프리빌트 CLI(macos-aarch64, SHA256SUMS.txt 검증)로
+> 원본 문서 재변환을 실시한 결과 **exit 0 · `LAYOUT_OVERFLOW` 0건 · PDF 1.7 2페이지
+> 44,273B · 양식 본문 정상 추출**로 해결을 확인했다. rhwp-python 0.8.1(core 0.7.17)에는
+> 아직 미포함 — 바인딩이 v0.8.x 코어를 번들하면 Python 워커 경로도 자동 해제된다.
+> 아래는 제출 당시의 이슈 초안 기록.
+
 > 업스트림 `edwardkim/rhwp`에 제출할 이슈 초안. **게시 전 확인**: 첨부할 `.hwp`에
 > 민감/비공개 정보가 없는지 반드시 검토할 것. 아래 로컬 경로는 익명화했음.
 

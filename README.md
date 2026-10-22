@@ -319,9 +319,22 @@ HWP/HWPX 정밀 변환 엔진 rhwp를 최신 바인딩으로 올렸습니다.
 | **핀 갱신** | `apps/api/Dockerfile`, `standalone/scripts/install-ubuntu.sh`, `standalone/scripts/install-rhwp-worker.sh`(0.5.1 → 0.8.1, 이전 범프 때 누락) |
 | **freetype 워크어라운드** | manylinux 휠(x86_64·aarch64 모두)이 여전히 `FT_Palette_Select` 이전 freetype을 번들 — distro freetype symlink 워크어라운드 유지 필요 재확인, 기존 glob이 양 아키텍처 매칭 |
 | **회귀 검증** | macOS arm64 실측: 품질 코퍼스 11건 변환 성공. 0.8.0 대비 페이지 수·추출 텍스트 일치(1종은 줄바꿈 위치만 변동 — 상류 조판 개선) |
-| **OPEN-001** | "보고서 양식.hwp" PartialTable 오버플로는 0.8.1에서도 미해결 (상류 이슈 추적 중) |
+| **OPEN-001** | "보고서 양식.hwp" PartialTable 오버플로 — **상류 v0.8.x에서 해결 확인**(edwardkim/rhwp#1583 CLOSED, PR #1817). rhwp-python 0.8.1에는 미포함 → rhwp-cli v0.8.7 핀 범프로 대응 (아래 2026-10-22 항목 참조) |
 
 상세 검증 내역은 [`docs/changes/2026-10-18-rhwp-0.8.1-upgrade.md`](docs/changes/2026-10-18-rhwp-0.8.1-upgrade.md)을 참고하세요.
+
+## 2026-10-22 OPEN-001 해소 + rhwp-cli v0.8.7 핀 범프
+
+"보고서 양식.hwp" 전 페이지 오버플로 변환 실패(OPEN-001)가 상류에서 해결되었고, CLI 핀을 올려 대응 경로를 확보했습니다.
+
+| 항목 | 내용 |
+|---|---|
+| **상류 해결** | edwardkim/rhwp#1583 CLOSED(COMPLETED) — PageDef=0 → 본문 높이 0 원인 확정, A4 폴백 수정이 PR #1817로 머지 |
+| **실증 (2026-10-22)** | rhwp-cli **v0.8.7** 프리빌트(macos-aarch64, SHA256SUMS.txt 검증)로 원본 변환: exit 0, `LAYOUT_OVERFLOW` 0건, PDF 2페이지 정상. 일반 문서(사업계획서.hwp 14p)도 정상 |
+| **변경** | `standalone/scripts/install-rhwp-cli.sh` 기본 핀 v0.7.17 → **v0.8.7** (`export-pdf` 인터페이스·`--version` 출력 호환 확인) |
+| **운영 반영** | 즉시 적용하려면 `install-rhwp-cli.sh` 실행 후 `RHWP_CLI_ENABLED=1`. rhwp-python이 v0.8.x 코어를 번들한 릴리스가 나오면 Python 워커 경로도 자동 해제 |
+
+상세 내역은 [`docs/changes/2026-10-22-rhwp-cli-v0.8.7-open001.md`](docs/changes/2026-10-22-rhwp-cli-v0.8.7-open001.md)을 참고하세요.
 
 ## 향후 고도화
 
