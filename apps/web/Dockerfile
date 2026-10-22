@@ -1,6 +1,6 @@
 # Build context is the repo root: docker build -f apps/web/Dockerfile .
-FROM node:25-slim AS build
-RUN corepack enable
+FROM node:24-slim AS build
+RUN npm install -g pnpm@10.32.1
 WORKDIR /app
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
 COPY packages/shared/package.json packages/shared/
