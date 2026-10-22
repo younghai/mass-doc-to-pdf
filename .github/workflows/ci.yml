@@ -17,7 +17,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # Must run before setup-node: its `cache: pnpm` resolves the store path
       # through the pnpm executable. Version comes from the packageManager
