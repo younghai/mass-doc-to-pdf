@@ -104,6 +104,15 @@ describe("loadEngineConfig", () => {
 });
 
 describe("loadAppConfig", () => {
+  it("binds to loopback when HOST is configured for local development", () => {
+    // Given
+    const env = { AUTH_SECRET: "s", HOST: "127.0.0.1" };
+    // When
+    const cfg = loadAppConfig(env);
+    // Then
+    expect(cfg.host).toBe("127.0.0.1");
+  });
+
   it("composes engines + s3 + auth + webOrigin with defaults", () => {
     const cfg = loadAppConfig({ AUTH_SECRET: "s" });
     expect(cfg.engines.gotenbergUrl).toBe("http://localhost:3000");

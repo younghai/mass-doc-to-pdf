@@ -86,6 +86,7 @@ export interface AppConfig {
   storage: StorageConfig;
   auth: AuthConfigValues;
   webOrigin: string;
+  readonly host: string;
   port: number;
   /** Fastify trustProxy: how much of the X-Forwarded-For chain to trust. */
   trustProxy: boolean | number;
@@ -148,6 +149,7 @@ export function loadAppConfig(env: NodeJS.ProcessEnv): AppConfig {
       devAuth: env.DEV_AUTH === "1",
     },
     webOrigin: env.WEB_ORIGIN ?? "http://localhost:5173",
+    host: env.HOST ?? "0.0.0.0",
     port: Number(env.PORT ?? 8000),
     trustProxy: parseTrustProxy(env),
     maxActiveJobsPerUser: Number(env.MAX_ACTIVE_JOBS_PER_USER ?? 50),
