@@ -37,6 +37,11 @@ jobs:
       - name: Generate Prisma client
         run: pnpm --filter @hwptopdf/api exec prisma generate
 
+      # @hwptopdf/shared resolves types from dist/, so typecheck/test/build in
+      # the apps need it compiled first (same order as the Dockerfile).
+      - name: Build shared package
+        run: pnpm --filter @hwptopdf/shared build
+
       - name: Typecheck
         run: pnpm -r typecheck
 
