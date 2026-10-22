@@ -1,0 +1,18 @@
+[Unit]
+Description=mass-doc-to-pdf conversion worker
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=__ROOT__/apps/api
+EnvironmentFile=__ROOT__/.env.standalone
+# Real user home so the rhwp Python worker can build its environment.
+Environment=HOME=__HOME__
+ExecStart=/usr/bin/node dist/queue/worker-main.js
+Restart=always
+RestartSec=5
+User=__USER__
+Group=__USER__
+
+[Install]
+WantedBy=multi-user.target

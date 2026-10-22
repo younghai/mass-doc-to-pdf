@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mass Doc to PDF — 완료 작업 vs 향후 작업 제안</title>
+<style>
+  :root {
+    --bg: #f6f8fb; --card: #ffffff; --ink: #1a2233; --muted: #5b6b82;
+    --line: #e3e9f2; --blue: #2456d6; --red: #c2382f; --red-bg: #fdf2f1;
+    --green: #1d7a3e; --green-bg: #f0f9f2; --amber-bg: #fff8e8; --amber: #8a6116;
+    --orange: #b84d00; --orange-bg: #fff3eb; --gray: #4b5563; --gray-bg: #f3f4f6;
+    --code-bg: #10182a; --code-ink: #dce6f7;
+    --pri-high: #c2382f; --pri-high-bg: #fdf2f1;
+    --pri-mid: #b84d00; --pri-mid-bg: #fff3eb;
+    --pri-low: #4b5563; --pri-low-bg: #f3f4f6;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg); color: var(--ink);
+    font-family: "Apple SD Gothic Neo", "Pretendard", -apple-system, "Segoe UI", sans-serif;
+    line-height: 1.6; padding: 40px 20px 80px;
+  }
+  .wrap { max-width: 1120px; margin: 0 auto; }
+
+  /* Header */
+  header h1 { font-size: 28px; letter-spacing: -0.5px; }
+  header .sub { color: var(--muted); margin-top: 6px; font-size: 14.5px; }
+
+  /* Summary strip */
+  .summary-strip {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin-top: 28px;
+  }
+  @media (max-width: 760px) {
+    .summary-strip { grid-template-columns: repeat(2, 1fr); }
+    body { padding: 24px 12px 60px; }
+  }
+  @media (max-width: 480px) {
+    .summary-strip { grid-template-columns: 1fr; }
+  }
+  .stat-card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+    padding: 18px 20px 16px; text-align: center;
+  }
+  .stat-card .num { font-size: 36px; font-weight: 800; letter-spacing: -1px; color: var(--blue); line-height: 1.1; }
+  .stat-card .num.green { color: var(--green); }
+  .stat-card .label { font-size: 13px; color: var(--muted); margin-top: 5px; }
+  .stat-card .sub-label { font-size: 12px; color: var(--muted); opacity: 0.7; margin-top: 2px; }
+
+  /* Section headings */
+  .section-title {
+    margin-top: 50px; margin-bottom: 18px;
+    display: flex; align-items: center; gap: 12px;
+  }
+  .section-title h2 { font-size: 21px; letter-spacing: -0.3px; }
+  .section-badge {
+    font-size: 11.5px; font-weight: 700; border-radius: 5px; padding: 3px 9px;
+    background: #e8eefc; color: var(--blue);
+  }
+  .section-badge.done { background: var(--green-bg); color: var(--green); }
+  .section-badge.next { background: var(--amber-bg); color: var(--amber); }
+
+  /* Timeline phases */
+  .phase { margin-bottom: 22px; }
+  .phase-card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+    overflow: hidden;
+  }
+  .phase-head {
+    display: flex; align-items: center; gap: 10px;
+    padding: 12px 18px; background: var(--green-bg);
+    border-bottom: 1px solid #d6ecdd;
+  }
+  .phase-head .phase-no {
+    width: 26px; height: 26px; background: var(--green); color: #fff;
+    border-radius: 50%; display: flex; align-items: center; justify-content: center;
+    font-size: 12.5px; font-weight: 800; flex-shrink: 0;
+  }
+  .phase-head h3 { font-size: 15px; color: var(--green); flex: 1; }
+  .phase-head .commits { display: flex; gap: 6px; flex-wrap: wrap; }
+  .hash {
+    font-family: "SF Mono", ui-monospace, Menlo, monospace;
+    font-size: 11px; background: var(--code-bg); color: var(--code-ink);
+    border-radius: 5px; padding: 2px 7px; white-space: nowrap;
+  }
+  .phase-body { padding: 0; }
+  .phase-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  .phase-table th {
+    background: #eef2f9; text-align: left; padding: 9px 16px;
+    font-size: 12px; font-weight: 700; color: var(--muted);
+    border-bottom: 1px solid var(--line);
+  }
+  .phase-table td {
+    padding: 10px 16px; border-bottom: 1px solid var(--line); vertical-align: top;
+  }
+  .phase-table tr:last-child td { border-bottom: none; }
+  .phase-table td:first-child { font-weight: 600; color: var(--ink); width: 44%; }
+  .phase-table td:last-child { color: var(--muted); font-size: 13px; }
+  .check {
+    display: inline-block; width: 16px; height: 16px; background: var(--green);
+    border-radius: 50%; margin-right: 7px; flex-shrink: 0; vertical-align: -2px;
+    position: relative;
+  }
+  .check::after {
+    content: "";
+    position: absolute; left: 4px; top: 2px;
+    width: 5px; height: 8px;
+    border: 2px solid #fff; border-top: none; border-left: none;
+    transform: rotate(40deg);
+  }
+
+  /* Future tasks */
+  .next-card > p::before { content: "근거 — "; font-weight: 800; color: var(--ink); }
+  .next-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 14px;
+    margin-top: 4px;
+  }
+  @media (max-width: 760px) {
+    .next-grid { grid-template-columns: 1fr; }
+  }
+  .next-card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+    padding: 16px 18px 18px;
+  }
+  .next-card-head {
+    display: flex; align-items: flex-start; gap: 8px; margin-bottom: 10px; flex-wrap: wrap;
+  }
+  .next-card-num {
+    font-size: 12px; font-weight: 800; color: var(--blue);
+    background: #e8eefc; border-radius: 5px; padding: 2px 8px;
+    flex-shrink: 0; margin-top: 1px;
+  }
+  .next-card h4 { font-size: 14.5px; flex: 1; min-width: 0; line-height: 1.4; }
+  .badge-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+  .pri-badge {
+    font-size: 11px; font-weight: 700; border-radius: 5px; padding: 2px 8px;
+  }
+  .pri-badge.high { background: var(--pri-high-bg); color: var(--pri-high); }
+  .pri-badge.mid  { background: var(--pri-mid-bg);  color: var(--pri-mid);  }
+  .pri-badge.low  { background: var(--pri-low-bg);  color: var(--pri-low);  }
+  .size-badge {
+    font-size: 11px; font-weight: 700; border-radius: 5px; padding: 2px 8px;
+    background: #e8eefc; color: var(--blue);
+  }
+  .next-card p { font-size: 13px; color: var(--muted); line-height: 1.65; }
+
+  /* Footer strip */
+  .footer-callout {
+    margin-top: 44px; background: var(--amber-bg); border: 1px solid #f0dfae;
+    border-radius: 12px; padding: 16px 20px;
+    font-size: 14px;
+  }
+  .footer-callout strong { color: var(--amber); }
+  footer { margin-top: 36px; color: var(--muted); font-size: 12.5px; text-align: center; }
+
+  /* Print */
+  @media print {
+    body { background: #fff; padding: 20px; }
+    .phase-card, .next-card, .stat-card { break-inside: avoid; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>Mass Doc to PDF — 완료 작업 vs 향후 작업 제안</h1>
+  <div class="sub">2026-06-07 ~ 06-11 하드닝 캠페인 결산 &middot; 작성 2026-06-12</div>
+</header>
+
+<!-- Summary strip -->
+<div class="summary-strip">
+  <div class="stat-card">
+    <div class="num">30</div>
+    <div class="label">완료 작업</div>
+  </div>
+  <div class="stat-card">
+    <div class="num">12</div>
+    <div class="label">커밋</div>
+    <div class="sub-label">main 푸시 완료</div>
+  </div>
+  <div class="stat-card">
+    <div class="num">133</div>
+    <div class="label">테스트</div>
+    <div class="sub-label">95 → 133 (+38)</div>
+  </div>
+  <div class="stat-card">
+    <div class="num green">가능</div>
+    <div class="label">배포 판정</div>
+    <div class="sub-label">rhwp 런타임 내장 완료</div>
+  </div>
+</div>
+
+<!-- Section 1: Done -->
+<div class="section-title" style="margin-top:52px;">
+  <h2>섹션 1 — 완료된 작업</h2>
+  <span class="section-badge done">30건 · 4단계</span>
+</div>
+
+<!-- Phase 1 -->
+<div class="phase">
+  <div class="phase-card">
+    <div class="phase-head">
+      <div class="phase-no">1</div>
+      <h3>필수 하드닝 8건 + 권장 4건 + 기타 2건</h3>
+      <div class="commits">
+        <span class="hash">e9455b2</span>
+        <span class="hash">53be5b9</span>
+      </div>
+    </div>
+    <div class="phase-body">
+      <table class="phase-table">
+        <thead><tr><th>항목</th><th>효과</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><span class="check"></span>USE_QUEUE=1 큐 배선 + worker 서비스</td>
+            <td>모든 배포 설정에 누락돼 있던 durable queue 활성화 — API 재시작에도 작업 보존</td>
+          </tr>
+          <tr>
+            <td><span class="check"></span>stuck-running reaper</td>
+            <td>영원히 "변환 중"에 갇히는 작업 자동 회수</td>
+          </tr>
+          <tr>
+            <td><span class="check"></span>attempts 의미론 수정 (claim = lease)</td>
+            <td>인프라 장애가 재시도 예산을 소모하지 않음</td>
+          </tr>
+          <tr>
+            <td><span class="check"></span>SQLite WAL + busy_timeout=5000</td>
+            <td>API+워커 동시 쓰기 안전</td>
+          </tr>
+          <tr>
+            <td><span class="check"></span>rate limit 300/min(인증 60/min) + 사용자당 활성 작업 50건</td>
+            <td>남용 방어</td>
+          </tr>
+          <tr>
+            <td><span class="check"></span>zip-bomb/XXE 방어 + 업로드 20MB 상한</td>
+            <td>악성 문서 업로드 표면 축소</td>
+          </tr>
+          <tr>
+            <td><span class="check"></span>sidecar 비루트(nobody) + LibreOffice 매크로 잠금(level 3)</td>
+            <td>파서 취약점 피해 범위 제한</td>
+          </tr>
+          <tr>
+            <td><span class="check"></span>데이터 삭제 API + 보존기간 30일 TTL 스윕</td>
+            <td>개인정보 보존 정책 준수, 스토리지 무한 증가 차단</td>
+          </tr>
+          <tr>
+            <td><span class="check"></span>Secure 쿠키 + CSRF Origin 검증, trustProxy</td>
+            <td>nginx TLS 종단 대응, CSRF 방어, OAuth 콜백 정상화</td>
+          </tr>
+          <tr>
+            <td><span class="check"></span>UX 4종 (배치 진행률·review 필터·재시도·진행 표시) + 품질 리포트 가독화</td>
+            <td>실패가 막다른 길이 되지 않도록, 경고 코드 한글화</td>
+          </tr>
+          <tr>
+            <td><span class="check"></span>HWP 품질 코퍼스 테스트</td>
+            <td>실문서 5건 중 4건 passed, rhwp 0.7.0 한계 3종 문서화</td>
+          </tr>
+          <tr>
+            <td><span class="check"></span>품질 게이트 수정 (비활성 엔진 오염 버그)</td>
+            <td>비활성 엔진이 모든 변환을 review로 오염시키던 버그 제거</td>
+          </tr>
+          <tr>
+            <td><span class="check"></span>standalone 재패키징 + tarball 전체 리허설</td>
+            <td>install→build→test 통과</td>
+          </tr>
+          <tr>
+            <td><span class="check"></span>GitHub push + README 갱신 + Waterfall SDLC 문서 24종</td>
+            <td>운영 문서화 완성</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Phase 2 -->
+<div class="phase">
+  <div class="phase-card">
+    <div class="phase-head">
+      <div class="phase-no">2</div>
+      <h3>리팩토링 6건</h3>
+      <div class="commits">
+        <span class="hash">3daef40</span>
+      </div>
+    </div>
+    <div class="phase-body">
+      <table class="phase-table">
+        <thead><tr><th>항목</th><th>효과</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><span class="check"></span>정밀 체인 조기 종료</td>
+            <td>실패 attempt 후 passed가 수학적으로 불가능하면 즉시 반환 — 격하 환경 지연 단축</td>
+          </tr>
+          <tr>
+            <td><span class="check"></span>pdfPageCount 정밀화</td>
+            <td>Outlines 북마크 수가 페이지 수를 오염시키던 휴리스틱 수정</td>
+          </tr>
+          <tr>
+            <td><span class="check"></span>checks.textChars 수집</td>
+            <td>텍스트 레이어가 빈 PDF(이미지뿐/인코딩 깨짐) 자동 검출 경고</td>
+          </tr>
+          <tr>
+            <td><span class="check"></span>raster 풋건 제거</td>
+            <td>미구현 엔진이 체인에 등록돼 품질을 오염시키던 설정 차단</td>
+          </tr>
+          <tr>
+            <td><span class="check"></span>claimNext 사용자별 라운드로빈</td>
+            <td>대량 배치가 다른 사용자 단건을 기아 상태로 만들던 문제 — 단건이 2번째로 처리됨(테스트 검증)</td>
+          </tr>
+          <tr>
+            <td><span class="check"></span>사이드카 운영화</td>
+            <td>Flask dev server→gunicorn, H2Orestart v0.7.12 고정 + 설치 검증</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Phase 3 -->
+<div class="phase">
+  <div class="phase-card">
+    <div class="phase-head">
+      <div class="phase-no">3</div>
+      <h3>P0 백엔드 4건</h3>
+      <div class="commits">
+        <span class="hash">31f086e</span>
+        <span class="hash">88bfeac</span>
+        <span class="hash">e1d071c</span>
+      </div>
+    </div>
+    <div class="phase-body">
+      <table class="phase-table">
+        <thead><tr><th>항목</th><th>효과</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><span class="check"></span>워커 크래시 루프 제거</td>
+            <td>원본 소실/스토리지 장애 1건이 워커 프로세스를 무한 crash-restart 루프에 빠뜨리던 결함 수정</td>
+          </tr>
+          <tr>
+            <td><span class="check"></span>visibility lease 5분→15분 정합</td>
+            <td>5분 넘는 변환이 재청구돼 이중 처리되던 모순 해결</td>
+          </tr>
+          <tr>
+            <td><span class="check"></span>외부 호출 타임아웃</td>
+            <td>사이드카 fetch 150s(이전 무제한), builtin Chrome 120s+SIGKILL(이전 무한 행)</td>
+          </tr>
+          <tr>
+            <td><span class="check"></span>엔진 가용성 프리플라이트 + GET /health/engines</td>
+            <td>런타임 없는 엔진이 모든 HWP를 영구 review로 오염시키던 배포 결함 — 부팅 프로브로 정직하게 제외 + 운영 가시화</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Phase 4 -->
+<div class="phase">
+  <div class="phase-card">
+    <div class="phase-head">
+      <div class="phase-no">4</div>
+      <h3>P1 품질 4건 + 런타임 패키징</h3>
+      <div class="commits">
+        <span class="hash">c8b9dbc</span>
+        <span class="hash">1bdc6fa</span>
+      </div>
+    </div>
+    <div class="phase-body">
+      <table class="phase-table">
+        <thead><tr><th>항목</th><th>효과</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><span class="check"></span>영구 실패 분류</td>
+            <td>암호/손상/미지원 문서의 3회×전체체인 헛 재시도 제거</td>
+          </tr>
+          <tr>
+            <td><span class="check"></span>미리보기 사전 생성 + poppler</td>
+            <td>요청마다 LibreOffice 수백 MB 기동하던 구조 → 변환 시 1회 생성·저장, pdftoppm(~50ms) 우선</td>
+          </tr>
+          <tr>
+            <td><span class="check"></span>rhwp 폰트 전달 + maxBuffer 4MB</td>
+            <td>코퍼스에서 확인된 폰트 대체 렌더링 경로 개선</td>
+          </tr>
+          <tr>
+            <td><span class="check"></span>Docker 이미지/standalone 설치기에 rhwp-python==0.7.0 + poppler + 한글 폰트 내장</td>
+            <td>새 배포에서 정밀 변환이 기본 동작</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Section 2: Next -->
+<div class="section-title">
+  <h2>섹션 2 — 향후 작업 제안</h2>
+  <span class="section-badge next">10건</span>
+</div>
+
+<div class="next-grid">
+
+  <div class="next-card">
+    <div class="next-card-head">
+      <span class="next-card-num">01</span>
+      <h4>배치 1급 객체화</h4>
+    </div>
+    <div class="badge-row">
+      <span class="pri-badge high">우선순위: 상</span>
+      <span class="size-badge">규모: M</span>
+    </div>
+    <p>batchId 컬럼과 BatchDTO 타입이 스키마/공용 타입에 이미 정의돼 있으나 어떤 코드도 사용하지 않음. 이 서비스의 핵심 시나리오가 "1,000건 대량 변환"인데 배치 진행률·배치 단위 재시도·ZIP 일괄 다운로드가 없어 운영자가 작업을 개별 확인해야 함. 큐 공정성도 배치 vs 단건 명시 레인으로 발전 가능.</p>
+  </div>
+
+  <div class="next-card">
+    <div class="next-card-head">
+      <span class="next-card-num">02</span>
+      <h4>review 사유 구체화 — 듀얼 엔진 교차 검증</h4>
+    </div>
+    <div class="badge-row">
+      <span class="pri-badge high">우선순위: 상</span>
+      <span class="size-badge">규모: M</span>
+    </div>
+    <p>현재 review 사유는 경고 코드명(rhwp_small_pdf_review 등)뿐이라 검수자가 "무엇을 봐야 하는지" 모름. review 작업만 H2Orestart로 한 번 더 변환해 페이지 수·텍스트 양을 비교하면 "rhwp 7p vs LibreOffice 14p — 레이아웃 손실 의심" 같은 사람이 읽는 사유 제공 가능. 서비스의 존재 이유("성공으로 표시됐지만 원본과 다름"을 잡는 것)에 직결.</p>
+  </div>
+
+  <div class="next-card">
+    <div class="next-card-head">
+      <span class="next-card-num">03</span>
+      <h4>실서버 품질 코퍼스 재검증</h4>
+    </div>
+    <div class="badge-row">
+      <span class="pri-badge high">우선순위: 상</span>
+      <span class="size-badge">규모: S</span>
+    </div>
+    <p>보고서양식.hwp가 rhwp 0.7.0 PartialTable 한계로 실패했고, 실서버(사이드카 포함)에서 H2Orestart 폴백이 통과하는지 미확인. quality-corpus-report.sh 스크립트는 준비돼 있음 — 이번에 내장한 런타임 패키징의 실효 검증이기도 함.</p>
+  </div>
+
+  <div class="next-card">
+    <div class="next-card-head">
+      <span class="next-card-num">04</span>
+      <h4>워커 동시성 (WORKER_CONCURRENCY)</h4>
+    </div>
+    <div class="badge-row">
+      <span class="pri-badge mid">우선순위: 중</span>
+      <span class="size-badge">규모: S</span>
+    </div>
+    <p>워커가 한 번에 1건 처리 — 1,000건 배치는 rhwp 1초/건이어도 17분, 사이드카 폴백 3초/건이면 50분. claimNext가 이미 낙관적 잠금으로 멀티 워커 안전하므로 루프 N개 기동만으로 처리량 N배. rhwp/LO 프로세스 메모리만 고려하면 됨.</p>
+  </div>
+
+  <div class="next-card">
+    <div class="next-card-head">
+      <span class="next-card-num">05</span>
+      <h4>DLQ 가시화 — 실패 사유 컬럼 + UI 탭</h4>
+    </div>
+    <div class="badge-row">
+      <span class="pri-badge mid">우선순위: 중</span>
+      <span class="size-badge">규모: M</span>
+    </div>
+    <p>isPermanentFailure 분류가 도입됐지만 ConversionFailureReason이 DB 컬럼으로 저장되지 않고 에러 문자열에만 박혀 있음. 사유별 집계와 "재시도 불가" 탭이 있어야 대량 배치 실패의 패턴(암호 문서 비율 등)을 파악하고 고객 안내 가능.</p>
+  </div>
+
+  <div class="next-card">
+    <div class="next-card-head">
+      <span class="next-card-num">06</span>
+      <h4>/metrics 운영 지표</h4>
+    </div>
+    <div class="badge-row">
+      <span class="pri-badge mid">우선순위: 중</span>
+      <span class="size-badge">규모: M</span>
+    </div>
+    <p>서비스 기획서 KPI(변환 성공률, review 비율, P99 변환 시간, 가용성)를 실측할 수단이 없음. /api/stats는 누적 집계뿐 — 큐 깊이, 엔진별 성공률/지연 히스토그램의 시계열화가 필요. Prometheus 텍스트 포맷이면 의존성 없이 구현 가능.</p>
+  </div>
+
+  <div class="next-card">
+    <div class="next-card-head">
+      <span class="next-card-num">07</span>
+      <h4>E2E 회귀 CI 통합</h4>
+    </div>
+    <div class="badge-row">
+      <span class="pri-badge mid">우선순위: 중</span>
+      <span class="size-badge">규모: M</span>
+    </div>
+    <p>Playwright e2e 스택이 존재하나 RUN_E2E=1 수동 실행. 이번에 추가된 preview 사전 생성·/health/engines·review 필터는 브라우저 레벨 동작이라 단위 테스트만으로 회귀를 못 잡음. GitHub Actions에 compose 기동 후 e2e 실행 잡 추가.</p>
+  </div>
+
+  <div class="next-card">
+    <div class="next-card-head">
+      <span class="next-card-num">08</span>
+      <h4>인라인 모드 동시 변환 상한</h4>
+    </div>
+    <div class="badge-row">
+      <span class="pri-badge low">우선순위: 하</span>
+      <span class="size-badge">규모: S</span>
+    </div>
+    <p>USE_QUEUE 미설정 시 업로드마다 즉시 변환 — 다중 사용자 동시 업로드에서 rhwp/LO 프로세스가 무제한 기동될 수 있음. 운영 권고는 USE_QUEUE=1이지만 잘못 설정한 배포를 위한 코드 레벨 방어선(세마포어 4개 등)이 없음.</p>
+  </div>
+
+  <div class="next-card">
+    <div class="next-card-head">
+      <span class="next-card-num">09</span>
+      <h4>rhwp 업스트림 추적 (지속 작업)</h4>
+    </div>
+    <div class="badge-row">
+      <span class="pri-badge low">우선순위: 하</span>
+      <span class="size-badge">규모: S</span>
+    </div>
+    <p>rhwp 0.7.0 한계 3종(PartialTable 렌더 중단, NFD 자모 글리프 겹침, 자간 압축 시 공백 유실)이 문서화돼 있음. 버전 고정(==0.7.0)을 채택했으므로, 업스트림 릴리스 시 코퍼스 재실행 → 핀 갱신하는 절차 운영 필요.</p>
+  </div>
+
+  <div class="next-card">
+    <div class="next-card-head">
+      <span class="next-card-num">10</span>
+      <h4>Hancom SDK / Aspose 실계정 검증</h4>
+    </div>
+    <div class="badge-row">
+      <span class="pri-badge low">우선순위: 하</span>
+      <span class="size-badge">규모: L</span>
+    </div>
+    <p>공공기관 고충실도 요구 대응용 상용 엔진 자리는 레지스트리에 마련돼 있으나(hancom/aspose 설정 시 체인 1순위) 실제 계정으로 검증된 적 없음. 도입 시 품질 등급 good의 신뢰도가 좌우됨.</p>
+  </div>
+
+</div>
+
+<!-- Footer callout -->
+<div class="footer-callout">
+  <strong>우선 추천 순서:</strong>
+  ③ 실서버 코퍼스 검증(S) → ① 배치 1급 객체화 → ② review 사유 구체화 → ④ 워커 동시성
+</div>
+
+<footer>hwptopdf &middot; main 브랜치 &middot; 2026-06-07 ~ 06-11 하드닝 캠페인 &middot; 2026-06-12 생성</footer>
+
+</div>
+</body>
+</html>

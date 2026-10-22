@@ -24,4 +24,26 @@ describe("H2OrestartConverter", () => {
       }),
     ).rejects.toBeInstanceOf(ConversionError);
   });
+  it("aborts a hung sidecar request after timeoutMs", async () => {
+    const hangingFetch: FetchFn = (_url, init) =>
+      new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () =>
+          reject(Object.assign(new Error("aborted"), { name: "TimeoutError" })),
+        );
+      });
+    const c = new H2OrestartConverter("http://sidecar", hangingFetch, 20);
+    await expect(
+      c.convert({ filename: "a.hwp", data: Buffer.from("x") }),
+    ).rejects.toThrow(/timed out after 20ms/);
+  });
+  it("passes an abort signal to fetch", async () => {
+    const f = vi.fn<FetchFn>(async (_url, init) => {
+      expect(init!.signal).toBeInstanceOf(AbortSignal);
+      return new Response(Buffer.from("HWPPDF"), { status: 200 });
+    });
+    const c = new H2OrestartConverter("http://hwp:8080", f);
+    expect((await c.convert({ filename: "doc.hwp", data: Buffer.from("hwp") })).toString()).toBe(
+      "HWPPDF",
+    );
+  });
 });

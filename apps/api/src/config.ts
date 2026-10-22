@@ -1,4 +1,12 @@
 import type { EngineConfig } from "./convert/registry.js";
+import { checkGoogleOAuthReadiness } from "./auth/oauthReadiness.js";
+
+function rhwpCliMode(env: NodeJS.ProcessEnv): "pdf" {
+  if (env.RHWP_CLI_VISUAL_MODE === "raster") {
+    console.warn("RHWP_CLI_VISUAL_MODE=raster is not implemented; falling back to pdf export");
+  }
+  return "pdf";
+}
 
 function officeEngine(env: NodeJS.ProcessEnv): EngineConfig["officeEngine"] {
   switch (env.OFFICE_ENGINE) {
@@ -12,10 +20,32 @@ function officeEngine(env: NodeJS.ProcessEnv): EngineConfig["officeEngine"] {
 }
 
 export function loadEngineConfig(env: NodeJS.ProcessEnv): EngineConfig {
+  // Shared by both rhwp paths (Python worker + Rust CLI) so font discovery is
+  // configured identically regardless of which renderer runs.
+  const fontPaths = (env.RHWP_FONT_PATHS ?? "")
+    .split(":")
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0);
   const cfg: EngineConfig = {
     gotenbergUrl: env.GOTENBERG_URL ?? "http://localhost:3000",
     hwpSidecarUrl: env.HWP_SIDECAR_URL ?? "http://localhost:8080",
+    hwpSidecarTimeoutMs: Number(env.SIDECAR_TIMEOUT_MS ?? 150_000),
+    builtinTimeoutMs: Number(env.BUILTIN_TIMEOUT_MS ?? 120_000),
     officeEngine: officeEngine(env),
+    rhwp: {
+      enabled: env.RHWP_ENABLED !== "0",
+      pythonPath: env.RHWP_PYTHON ?? "python3",
+      workerScript: env.RHWP_WORKER_SCRIPT || undefined,
+      timeoutMs: Number(env.RHWP_TIMEOUT_MS ?? 120_000),
+      fontPaths,
+    },
+    rhwpCli: {
+      enabled: env.RHWP_CLI_ENABLED === "1",
+      cliPath: env.RHWP_CLI_PATH ?? "rhwp",
+      timeoutMs: Number(env.RHWP_CLI_TIMEOUT_MS ?? env.RHWP_TIMEOUT_MS ?? 120_000),
+      fontPaths,
+      mode: rhwpCliMode(env),
+    },
   };
 
   if (env.HANCOM_BASE_URL && env.HANCOM_API_KEY) {
@@ -56,12 +86,48 @@ export interface AppConfig {
   storage: StorageConfig;
   auth: AuthConfigValues;
   webOrigin: string;
+  readonly host: string;
   port: number;
+  /** Fastify trustProxy: how much of the X-Forwarded-For chain to trust. */
+  trustProxy: boolean | number;
+  /** Max concurrent (pending/running) jobs a single user may hold before 429. */
+  maxActiveJobsPerUser: number;
+}
+
+/**
+ * How many reverse-proxy hops Fastify should trust when deriving req.ip / req.protocol.
+ * Trusting the *entire* X-Forwarded-For chain (the old hardcoded `true`) lets a client
+ * spoof its IP and defeat per-IP rate limiting, so we default to a single hop — correct
+ * for the documented single-nginx topology. TRUST_PROXY=0 turns trust off entirely;
+ * a positive integer trusts that many hops; `true` opts back into whole-chain trust for
+ * multi-proxy operators who accept the risk.
+ */
+export function parseTrustProxy(env: NodeJS.ProcessEnv): boolean | number {
+  const raw = env.TRUST_PROXY;
+  if (raw === undefined || raw === "") return 1;
+  const lower = raw.toLowerCase();
+  if (raw === "0" || lower === "false") return false;
+  if (lower === "true") return true;
+  const hops = Number(raw);
+  return Number.isInteger(hops) && hops > 0 ? hops : 1;
 }
 
 export function loadAppConfig(env: NodeJS.ProcessEnv): AppConfig {
   if (!env.AUTH_SECRET) {
     throw new Error("AUTH_SECRET is required (generate with: openssl rand -base64 32)");
+  }
+  // Refuse the auth-bypassing operator mode in production unless explicitly allowed.
+  if (env.NODE_ENV === "production" && env.DEV_AUTH === "1" && env.ALLOW_DEV_AUTH !== "1") {
+    throw new Error(
+      "DEV_AUTH=1 bypasses authentication and is refused in production. " +
+        "Set DEV_AUTH=0 (use Google OAuth) or, only for trusted internal hosts, ALLOW_DEV_AUTH=1.",
+    );
+  }
+  if (env.NODE_ENV === "production" && env.DEV_AUTH !== "1") {
+    const readiness = checkGoogleOAuthReadiness(env);
+    if (!readiness.ok) {
+      throw new Error(`Google OAuth operation login is not ready: ${readiness.issues.join(" ")}`);
+    }
   }
   return {
     engines: loadEngineConfig(env),
@@ -83,6 +149,9 @@ export function loadAppConfig(env: NodeJS.ProcessEnv): AppConfig {
       devAuth: env.DEV_AUTH === "1",
     },
     webOrigin: env.WEB_ORIGIN ?? "http://localhost:5173",
+    host: env.HOST ?? "0.0.0.0",
     port: Number(env.PORT ?? 8000),
+    trustProxy: parseTrustProxy(env),
+    maxActiveJobsPerUser: Number(env.MAX_ACTIVE_JOBS_PER_USER ?? 50),
   };
 }

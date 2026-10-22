@@ -3,7 +3,12 @@ import { setupTestDb } from "../test/testDb.js";
 import { multipartPayload } from "../test/multipart.js";
 import { buildApp, type AppDeps } from "../app.js";
 import { JobService } from "../jobs/jobService.js";
-import { ConversionError, type Converter } from "../convert/types.js";
+import {
+  ConversionError,
+  type Converter,
+  type ReportingConverter,
+  type ConversionResult,
+} from "../convert/types.js";
 
 let db: ReturnType<typeof setupTestDb>;
 let userId: string;
@@ -15,20 +20,38 @@ beforeAll(async () => {
 });
 afterAll(() => db.cleanup());
 
-function makeApp(engine: Converter, authed = true) {
+type MakeAppOptions = {
+  readonly authed?: boolean;
+  readonly activeJobs?: number;
+  readonly maxActiveJobsPerUser?: number;
+};
+
+function makeApp(engine: Converter, options: MakeAppOptions = {}) {
   const put = vi.fn(async (_key: string, _body: Buffer, _contentType: string) => {});
   const get = vi.fn(async (_key: string) => new Uint8Array());
+  const forFormat = vi.fn(() => engine);
   const storage = {
     put,
     get,
+    delete: vi.fn(async () => {}),
   };
+  const jobs = new JobService(db.prisma);
+  if (options.activeJobs != null) {
+    vi.spyOn(jobs, "countActive").mockResolvedValue(options.activeJobs);
+  }
+  // Inject a stub renderer so the post-success preview pre-render is deterministic
+  // (the real defaultPreviewRenderer would shell out to pdftoppm/LibreOffice).
+  const pdfPreview = { renderFirstPagePng: vi.fn(async () => Buffer.from("\x89PNG")) };
   const deps: AppDeps = {
-    registry: { forFormat: () => engine },
+    registry: { forFormat },
     storage,
-    jobs: new JobService(db.prisma),
-    getSessionUser: async () => (authed ? { id: userId, email: "u@x.c" } : null),
+    jobs,
+    pdfPreview,
+    webOrigin: "http://localhost",
+    ...(options.maxActiveJobsPerUser != null ? { maxActiveJobsPerUser: options.maxActiveJobsPerUser } : {}),
+    getSessionUser: async () => (options.authed ?? true ? { id: userId, email: "u@x.c" } : null),
   };
-  return { app: buildApp(deps), storage };
+  return { app: buildApp(deps), storage, forFormat, pdfPreview, jobs };
 }
 
 function deferred<T>() {
@@ -63,7 +86,141 @@ describe("POST /api/convert", () => {
     expect(storage.put).toHaveBeenCalledTimes(1);
     output.resolve(Buffer.from("%PDF-1.7"));
     await waitForJob(running.id, "success");
-    expect(storage.put).toHaveBeenCalledTimes(2);
+    // source + output PDF + quality report + pre-rendered preview PNG.
+    expect(storage.put).toHaveBeenCalledTimes(4);
+    expect(
+      vi.mocked(storage.put).mock.calls.some(
+        ([key, , contentType]) => key === `${userId}/preview/${running.id}.png` && contentType === "image/png",
+      ),
+    ).toBe(true);
+  });
+
+  it("stores a quality report when the converter provides one", async () => {
+    const output = deferred<ConversionResult>();
+    const engine: ReportingConverter = {
+      name: "hwp-quality-chain",
+      convert: async (input) => (await output.promise).pdf,
+      convertWithReport: async () => output.promise,
+    };
+    const { app, storage } = makeApp(engine);
+    const { body, headers } = multipartPayload("r.docx", Buffer.from("docbytes"));
+
+    const res = await app.inject({ method: "POST", url: "/api/convert", headers, payload: body });
+
+    expect(res.statusCode).toBe(202);
+    const running = res.json() as { id: string };
+    output.resolve({
+      pdf: Buffer.from("%PDF-1.7"),
+      report: {
+        version: 1,
+        jobId: running.id,
+        filename: "r.docx",
+        format: "office",
+        selectedEngine: "rhwp",
+        grade: "good",
+        status: "review",
+        checks: { pdfBytes: 8, pageCount: 1 },
+        attempts: [{ engine: "rhwp", status: "success", durationMs: 10 }],
+        warnings: [],
+        createdAt: new Date(2026, 0, 1).toISOString(),
+      },
+    });
+    const done = await waitForJob(running.id, "success");
+    expect(done?.qualityStatus).toBe("review");
+    const reportPut = vi
+      .mocked(storage.put)
+      .mock.calls.find(([key]) => key === `${userId}/report/${running.id}.json`);
+    expect(reportPut?.[2]).toBe("application/json");
+  });
+
+  it("marks precise office fallback output as failed instead of downloadable success", async () => {
+    const output = deferred<ConversionResult>();
+    const engine: ReportingConverter = {
+      name: "office-quality-chain",
+      convert: async () => (await output.promise).pdf,
+      convertWithReport: async () => output.promise,
+    };
+    const { app, storage } = makeApp(engine);
+    const { body, headers } = multipartPayload("deck.pptx", Buffer.from("pptbytes"));
+
+    const res = await app.inject({ method: "POST", url: "/api/convert", headers, payload: body });
+
+    expect(res.statusCode).toBe(202);
+    const running = res.json() as { id: string };
+    output.resolve({
+      pdf: Buffer.from("%PDF-1.7 text-only"),
+      report: {
+        version: 1,
+        jobId: running.id,
+        filename: "deck.pptx",
+        format: "office",
+        mode: "precise",
+        selectedEngine: "builtin-office",
+        grade: "fallback",
+        status: "review",
+        recommendedAction: "원본과 첫 페이지를 비교하고 정밀 변환으로 재시도하세요.",
+        checks: { pdfBytes: 18, pageCount: 1 },
+        attempts: [{ engine: "builtin-office", status: "success", durationMs: 10 }],
+        warnings: [],
+        createdAt: new Date(2026, 0, 1).toISOString(),
+      },
+    });
+
+    const failed = await waitForJob(running.id, "failed");
+    expect(failed?.engine).toBe("builtin-office");
+    expect(failed?.qualityStatus).toBe("review");
+    expect(failed?.error).toMatch(/품질 게이트 실패/);
+    expect(
+      vi.mocked(storage.put).mock.calls.some(([key]) => key === `${userId}/out/${running.id}.pdf`),
+    ).toBe(false);
+  });
+
+  it("passes the requested quality mode to the registry", async () => {
+    const output = deferred<Buffer>();
+    const engine: Converter = { name: "hwp-quality-chain", convert: async () => output.promise };
+    const { app, forFormat } = makeApp(engine);
+    const hwpOleHeader = Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1, 0x00]);
+    const { body, headers } = multipartPayload("sample.hwp", hwpOleHeader);
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/convert?qualityMode=quick",
+      headers,
+      payload: body,
+    });
+
+    expect(res.statusCode).toBe(202);
+    expect(forFormat).toHaveBeenCalledWith("hwp", { qualityMode: "quick" });
+    output.resolve(Buffer.from("%PDF-1.7"));
+    const running = res.json() as { id: string };
+    await waitForJob(running.id, "success");
+  });
+
+  it("returns 429 when the user's active jobs have reached the configured limit", async () => {
+    const engine: Converter = { name: "gotenberg", convert: async () => Buffer.from("%PDF-1.7") };
+    const { app, storage } = makeApp(engine, { activeJobs: 1, maxActiveJobsPerUser: 1 });
+    const { body, headers } = multipartPayload("r.docx", Buffer.from("docbytes"));
+
+    const res = await app.inject({ method: "POST", url: "/api/convert", headers, payload: body });
+
+    expect(res.statusCode).toBe(429);
+    expect(res.json()).toEqual({ error: "변환 대기 한도 초과. 완료된 작업을 확인 후 재시도하세요." });
+    expect(storage.put).not.toHaveBeenCalled();
+  });
+
+  it("accepts conversion when the user's active jobs are below the configured limit", async () => {
+    const output = deferred<Buffer>();
+    const engine: Converter = { name: "gotenberg", convert: async () => output.promise };
+    const { app } = makeApp(engine, { activeJobs: 0, maxActiveJobsPerUser: 1 });
+    const { body, headers } = multipartPayload("r.docx", Buffer.from("docbytes"));
+
+    const res = await app.inject({ method: "POST", url: "/api/convert", headers, payload: body });
+
+    expect(res.statusCode).toBe(202);
+    const running = res.json() as { id: string };
+    expect(running).toMatchObject({ status: "running" });
+    output.resolve(Buffer.from("%PDF-1.7"));
+    await waitForJob(running.id, "success");
   });
 
   it("returns a running job, then records failure when the engine throws", async () => {
@@ -78,7 +235,7 @@ describe("POST /api/convert", () => {
     const running = res.json() as { id: string };
     expect(running).toMatchObject({ status: "running" });
     const failed = await waitForJob(running.id, "failed");
-    expect(failed?.error).toMatch(/backend/);
+    expect(failed?.error).toBe("렌더링 실패: 다른 품질 모드로 재시도하거나 원본 문서를 다시 저장하세요.");
   });
 
   it("stores long Korean HWP filenames under a bounded object key", async () => {
@@ -111,7 +268,7 @@ describe("POST /api/convert", () => {
 
   it("returns 401 without a session", async () => {
     const engine: Converter = { name: "x", async convert() { return Buffer.from("x"); } };
-    const { app } = makeApp(engine, false);
+    const { app } = makeApp(engine, { authed: false });
     const { body, headers } = multipartPayload("r.docx", Buffer.from("x"));
     const res = await app.inject({ method: "POST", url: "/api/convert", headers, payload: body });
     expect(res.statusCode).toBe(401);

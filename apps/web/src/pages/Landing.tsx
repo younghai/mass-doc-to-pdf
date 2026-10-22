@@ -1,9 +1,9 @@
 import { Link } from "react-router-dom";
 
 const FEATURE_ITEMS = [
-  { label: "HWP/HWPX", text: "한글 문서를 PDF로 변환하고 작업 상태를 추적합니다." },
-  { label: "Office", text: "DOCX, XLSX, PPTX 문서를 같은 운영 큐에서 처리합니다." },
-  { label: "운영 큐", text: "진행 중, 성공, 실패 작업을 한 화면에서 확인합니다." },
+  { label: "품질 리포트", text: "각 변환 결과를 passed · review · failed로 판정하고 이유를 남깁니다." },
+  { label: "엔진 체인", text: "정밀 엔진을 먼저 시도하고 저품질 위험은 fallback 경로와 함께 기록합니다." },
+  { label: "검수 워크플로우", text: "review 출력은 자동 분리해 수동 검수와 재시도로 이어집니다." },
 ] as const;
 
 const WORKFLOW_ITEMS = [
@@ -35,10 +35,9 @@ export function Landing() {
           <div className="hero-copy">
             <p className="eyebrow">Document Conversion Operations</p>
             <h1>hwptopdf</h1>
-            <h2>HWP와 Office 문서를 운영 큐에서 PDF로 변환합니다.</h2>
+            <h2>우리는 변환 성공이 아니라 품질을 판정합니다 — passed · review · failed</h2>
             <p>
-              업로드, 변환 상태, 실패 사유, 다운로드까지 한 흐름으로 관리하는 문서 변환
-              서비스입니다.
+              저품질(review) 출력은 자동으로 분리해 검수자가 원본과 비교할 수 있게 합니다.
             </p>
             <div className="hero-actions">
               <Link to="/service/upload" className="btn">
@@ -52,7 +51,9 @@ export function Landing() {
 
           <div className="hero-preview" aria-label="서비스 운영 화면 미리보기">
             <div className="preview-toolbar">
-              <span>운영 현황</span>
+              <span>
+                운영 현황 <span className="mini-pill running">예시</span>
+              </span>
               <button type="button">새 변환</button>
             </div>
             <div className="preview-grid">
@@ -103,7 +104,7 @@ export function Landing() {
         <section className="landing-section" id="features">
           <div>
             <p className="eyebrow">Service Features</p>
-            <h2>변환 업무를 운영 화면으로 관리합니다.</h2>
+            <h2>결과 품질을 판정하고 검수 흐름으로 연결합니다.</h2>
           </div>
           <div className="feature-row">
             {FEATURE_ITEMS.map((item) => (

@@ -8,6 +8,18 @@ const port = Number(process.env.WEB_PORT ?? process.env.PORT ?? 8081);
 const apiOrigin = process.env.API_ORIGIN ?? "http://127.0.0.1:8000";
 const root = resolve(process.env.WEB_DIST ?? "/home/vts/hwptopdf/apps/web/dist");
 const indexPath = join(root, "index.html");
+const skippedProxyHeaders = new Set([
+  "connection",
+  "expect",
+  "host",
+  "keep-alive",
+  "proxy-authenticate",
+  "proxy-authorization",
+  "te",
+  "trailer",
+  "transfer-encoding",
+  "upgrade",
+]);
 
 const types = {
   ".css": "text/css; charset=utf-8",
@@ -61,7 +73,7 @@ async function proxyApi(req, res) {
   const target = new URL(req.url ?? "/", apiOrigin);
   const headers = new Headers();
   for (const [key, value] of Object.entries(req.headers)) {
-    if (value === undefined || key.toLowerCase() === "host") {
+    if (value === undefined || skippedProxyHeaders.has(key.toLowerCase())) {
       continue;
     }
     if (Array.isArray(value)) {

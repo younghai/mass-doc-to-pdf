@@ -42,7 +42,10 @@ async function copyResponse(res: Response, reply: import("fastify").FastifyReply
   reply.send(text.length ? text : null);
 }
 
-const authPluginImpl: FastifyPluginAsync<{ config: AuthConfig }> = async (app, opts) => {
+const authPluginImpl: FastifyPluginAsync<{ config: AuthConfig; rateLimitMax?: number }> = async (
+  app,
+  opts,
+) => {
   const { config } = opts;
 
   // Auth.js posts use form-urlencoded; keep the raw string so the bridge can forward it.
@@ -57,6 +60,10 @@ const authPluginImpl: FastifyPluginAsync<{ config: AuthConfig }> = async (app, o
   app.route({
     method: ["GET", "POST"],
     url: "/api/auth/*",
+    // Tighter per-IP ceiling than the global limiter: sign-in callbacks and CSRF
+    // token fetches are the brute-force surface. Inert when @fastify/rate-limit
+    // is not registered (unit tests).
+    config: { rateLimit: { max: opts.rateLimitMax ?? 60, timeWindow: "1 minute" } },
     handler: async (req, reply) => {
       const res = await Auth(toWebRequest(req), config);
       await copyResponse(res, reply);

@@ -1,8 +1,77 @@
 import { Link } from "react-router-dom";
-import type { JobDTO } from "@hwptopdf/shared";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import type { JobDTO, QualityStatus } from "@hwptopdf/shared";
 import { api } from "../api/client";
+import { confirmDelete } from "../confirm";
 import { StatusPill } from "./StatusPill";
 import { humanSize, formatDate } from "../format";
+import { QUALITY_STATUS_LABEL } from "../qualityView";
+
+const QUALITY_STATUS_CLASS: Record<QualityStatus, string> = {
+  passed: "quality-passed",
+  review: "quality-review",
+  failed: "quality-failed",
+};
+
+function QualityPill({ status }: { readonly status?: QualityStatus }) {
+  if (!status) return <span className="mini-pill quality-missing">미기록</span>;
+  return <span className={`mini-pill ${QUALITY_STATUS_CLASS[status]}`}>{QUALITY_STATUS_LABEL[status]}</span>;
+}
+
+function JobRow({ j }: { j: JobDTO }) {
+  const qc = useQueryClient();
+  const deleteMutation = useMutation({
+    mutationFn: () => api.deleteJob(j.id),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["jobs"] }),
+  });
+  const retryMutation = useMutation({
+    mutationFn: () => api.retryJob(j.id),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["jobs"] });
+      void qc.invalidateQueries({ queryKey: ["job", j.id] });
+    },
+  });
+
+  return (
+    <tr key={j.id}>
+      <td>
+        <Link to={`/service/jobs/${j.id}`}>{j.filename}</Link>
+      </td>
+      <td>{j.extension.toUpperCase()}</td>
+      <td>{humanSize(j.sizeBytes)}</td>
+      <td>{j.engine ?? "-"}</td>
+      <td>{formatDate(j.createdAt)}</td>
+      <td>
+        <StatusPill status={j.status} />
+      </td>
+      <td>
+        <QualityPill status={j.qualityStatus} />
+      </td>
+      <td className="row-actions">
+        <Link to={`/service/jobs/${j.id}`}>상세</Link>
+        {j.status === "success" && <a href={api.downloadUrl(j.id)}>다운로드</a>}
+        {j.status === "failed" && (
+          <button
+            className="btn-link"
+            type="button"
+            onClick={() => retryMutation.mutate()}
+            disabled={retryMutation.isPending}
+          >
+            재시도
+          </button>
+        )}
+        <button
+          className="btn-link danger"
+          type="button"
+          onClick={() => { if (confirmDelete(j.filename)) deleteMutation.mutate(); }}
+          disabled={deleteMutation.isPending}
+        >
+          삭제
+        </button>
+      </td>
+    </tr>
+  );
+}
 
 export function JobsTable({ jobs }: { jobs: JobDTO[] }) {
   if (!jobs.length) return <p className="empty">변환 내역이 없습니다.</p>;
@@ -16,27 +85,13 @@ export function JobsTable({ jobs }: { jobs: JobDTO[] }) {
           <th>엔진</th>
           <th>날짜</th>
           <th>상태</th>
+          <th>품질</th>
           <th>작업</th>
         </tr>
       </thead>
       <tbody>
         {jobs.map((j) => (
-          <tr key={j.id}>
-            <td>
-              <Link to={`/service/jobs/${j.id}`}>{j.filename}</Link>
-            </td>
-            <td>{j.extension.toUpperCase()}</td>
-            <td>{humanSize(j.sizeBytes)}</td>
-            <td>{j.engine ?? "-"}</td>
-            <td>{formatDate(j.createdAt)}</td>
-            <td>
-              <StatusPill status={j.status} />
-            </td>
-            <td className="row-actions">
-              <Link to={`/service/jobs/${j.id}`}>상세</Link>
-              {j.status === "success" && <a href={api.downloadUrl(j.id)}>다운로드</a>}
-            </td>
-          </tr>
+          <JobRow key={j.id} j={j} />
         ))}
       </tbody>
     </table>

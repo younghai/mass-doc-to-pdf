@@ -24,6 +24,7 @@ test("shows totals, success rate, and recent files", async () => {
     success: 8,
     failed: 2,
     running: 1,
+    queued: 0,
     pending: 0,
     successRate: 0.8,
   });

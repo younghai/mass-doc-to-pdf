@@ -61,13 +61,59 @@ model ConversionJob {
   mimeType   String
   sizeBytes  Int
   status     String   @default("pending") // pending | success | failed
+  qualityStatus String? // passed | review | failed
   engine     String?
   durationMs Int?
   error      String?
   sourceKey  String // S3 key of original upload
   outputKey  String? // S3 key of result PDF
   createdAt  DateTime @default(now())
+  // Durable-queue fields (P1): let a separate worker claim/retry jobs.
+  qualityMode String? // "precise" | "quick"
+  batchId     String?
+  attempts    Int      @default(0)
+  lockedAt    DateTime?
+  lockedBy    String?
   user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, createdAt])
+  @@index([status, lockedAt])
+}
+
+// Deliberately independent of ConversionJob/User cascades: remote deletion must
+// remain recoverable after the source job or account is removed.
+model SearchDocument {
+  jobId         String   @id
+  userId        String
+  outputKey     String
+  providerScope String
+  generation    String
+  status        String   @default("queued")
+  totalPages    Int      @default(0)
+  indexedPages  Int      @default(0)
+  omittedPages  String   @default("[]")
+  error         String?
+  attempts      Int      @default(0)
+  leaseToken    String?
+  leaseUntil    DateTime?
+  nextAttemptAt DateTime @default(now())
+  startedAt     DateTime @default(now())
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  pages         SearchPage[]
+
+  @@index([status, nextAttemptAt, leaseUntil])
+  @@index([userId, status])
+}
+
+model SearchPage {
+  jobId      String
+  pageNumber Int
+  key        String @unique
+  text       String
+  providerId String?
+  indexed    Boolean @default(false)
+  document   SearchDocument @relation(fields: [jobId], references: [jobId], onDelete: Cascade)
+
+  @@id([jobId, pageNumber])
 }

@@ -1,9 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-WEB_URL="${WEB_URL:-http://localhost}"
-API_URL="${API_URL:-http://127.0.0.1:18010}"
-SIDECAR_URL="${SIDECAR_URL:-http://127.0.0.1:18080}"
+QUALITY_MODE="${QUALITY_MODE:-precise}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 ENV_FILE="${ENV_FILE:-$ROOT/.env.standalone}"
 
@@ -13,16 +11,48 @@ if [ -f "$ENV_FILE" ]; then
   set +a
 fi
 
+WEB_URL="${WEB_URL:-${WEB_ORIGIN:-http://localhost}}"
+API_URL="${API_URL:-http://127.0.0.1:${PORT:-18010}}"
+SIDECAR_URL="${SIDECAR_URL:-${HWP_SIDECAR_URL:-http://127.0.0.1:${SIDECAR_PORT:-18080}}}"
+SMOKE_WAIT_ATTEMPTS="${SMOKE_WAIT_ATTEMPTS:-30}"
+SMOKE_WAIT_SECONDS="${SMOKE_WAIT_SECONDS:-1}"
+
+wait_for_body() {
+  local label="$1"
+  local url="$2"
+  for _ in $(seq 1 "$SMOKE_WAIT_ATTEMPTS"); do
+    if curl -fsS "$url" 2>/dev/null; then
+      return 0
+    fi
+    sleep "$SMOKE_WAIT_SECONDS"
+  done
+  echo "$label not ready: $url" >&2
+  return 1
+}
+
+wait_for_code() {
+  local label="$1"
+  local url="$2"
+  for _ in $(seq 1 "$SMOKE_WAIT_ATTEMPTS"); do
+    if curl -fsS -o /dev/null -w "%{http_code}\n" "$url" 2>/dev/null; then
+      return 0
+    fi
+    sleep "$SMOKE_WAIT_SECONDS"
+  done
+  echo "$label not ready: $url" >&2
+  return 1
+}
+
 printf "web: "
-curl -fsS -o /dev/null -w "%{http_code}\n" "$WEB_URL"
+wait_for_code web "$WEB_URL"
 
 printf "api: "
-curl -fsS "$API_URL/health"
+wait_for_body api "$API_URL/health"
 printf "\n"
 
 if [ "${OFFICE_ENGINE:-builtin}" = "hwp-sidecar" ]; then
   printf "sidecar: "
-  curl -fsS "$SIDECAR_URL/health"
+  wait_for_body sidecar "$SIDECAR_URL/health"
   printf "\n"
 else
   printf "sidecar: skipped (OFFICE_ENGINE=%s)\n" "${OFFICE_ENGINE:-builtin}"
@@ -33,6 +63,7 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 DOCX="$TMP_DIR/smoke.docx"
 JOB_JSON="$TMP_DIR/job.json"
 PDF="$TMP_DIR/smoke.pdf"
+QUALITY_JSON="$TMP_DIR/quality.json"
 
 DOCX="$DOCX" python3 - <<'PY'
 import os
@@ -60,7 +91,7 @@ with zipfile.ZipFile(docx, "w", zipfile.ZIP_DEFLATED) as zf:
 PY
 
 printf "upload: "
-curl -fsS -X POST -F "file=@$DOCX" "$WEB_URL/api/convert" > "$JOB_JSON"
+curl -fsS -X POST -F "file=@$DOCX" "$WEB_URL/api/convert?qualityMode=$QUALITY_MODE" > "$JOB_JSON"
 JOB_ID="$(python3 - <<'PY' "$JOB_JSON"
 import json
 import sys
@@ -101,3 +132,17 @@ if ! head -c 5 "$PDF" | grep -q "%PDF-"; then
   exit 1
 fi
 printf "download: %s bytes\n" "$(wc -c < "$PDF")"
+
+printf "quality: "
+curl -fsS "$WEB_URL/api/jobs/$JOB_ID/quality" -o "$QUALITY_JSON"
+python3 - <<'PY' "$QUALITY_JSON"
+import json
+import sys
+
+data = json.load(open(sys.argv[1]))
+mode = data.get("mode", "-")
+status = data.get("status", "-")
+action = data.get("recommendedAction", "-")
+print(f"mode={mode} engine={data['selectedEngine']} grade={data['grade']} status={status} attempts={len(data['attempts'])}")
+print(f"recommendedAction={action}")
+PY

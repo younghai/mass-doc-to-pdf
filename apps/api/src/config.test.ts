@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { loadEngineConfig, loadAppConfig } from "./config.js";
 
 describe("loadEngineConfig", () => {
@@ -7,8 +7,67 @@ describe("loadEngineConfig", () => {
     expect(cfg.gotenbergUrl).toBe("http://localhost:3000");
     expect(cfg.hwpSidecarUrl).toBe("http://localhost:8080");
     expect(cfg.officeEngine).toBe("gotenberg");
+    expect(cfg.rhwp).toEqual({
+      enabled: true,
+      pythonPath: "python3",
+      timeoutMs: 120_000,
+      fontPaths: [],
+    });
+    expect(cfg.rhwpCli).toEqual({
+      enabled: false,
+      cliPath: "rhwp",
+      timeoutMs: 120_000,
+      fontPaths: [],
+      mode: "pdf",
+    });
     expect(cfg.hancom).toBeUndefined();
     expect(cfg.aspose).toBeUndefined();
+  });
+
+  it("reads rhwp Rust CLI renderer config", () => {
+    const cfg = loadEngineConfig({
+      RHWP_CLI_ENABLED: "1",
+      RHWP_CLI_PATH: "/opt/rhwp/bin/rhwp",
+      RHWP_CLI_TIMEOUT_MS: "180000",
+      RHWP_FONT_PATHS: "/opt/fonts/hwp:/opt/fonts/nanum",
+    });
+    expect(cfg.rhwpCli).toEqual({
+      enabled: true,
+      cliPath: "/opt/rhwp/bin/rhwp",
+      timeoutMs: 180_000,
+      fontPaths: ["/opt/fonts/hwp", "/opt/fonts/nanum"],
+      mode: "pdf",
+    });
+  });
+
+  it("falls back to pdf and emits a warning when RHWP_CLI_VISUAL_MODE=raster is requested", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const cfg = loadEngineConfig({ RHWP_CLI_VISUAL_MODE: "raster" });
+    expect(cfg.rhwpCli.mode).toBe("pdf");
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("raster"));
+    warn.mockRestore();
+  });
+
+  it("reads rhwp worker config", () => {
+    const cfg = loadEngineConfig({
+      RHWP_ENABLED: "0",
+      RHWP_PYTHON: "/opt/rhwp/bin/python",
+      RHWP_WORKER_SCRIPT: "/srv/rhwp_worker.py",
+      RHWP_TIMEOUT_MS: "90000",
+    });
+    expect(cfg.rhwp).toEqual({
+      enabled: false,
+      pythonPath: "/opt/rhwp/bin/python",
+      workerScript: "/srv/rhwp_worker.py",
+      timeoutMs: 90_000,
+      fontPaths: [],
+    });
+  });
+
+  it("shares RHWP_FONT_PATHS across the rhwp worker and CLI renderers", () => {
+    const cfg = loadEngineConfig({ RHWP_FONT_PATHS: "/opt/fonts/hwp:/opt/fonts/nanum" });
+    expect(cfg.rhwp.fontPaths).toEqual(["/opt/fonts/hwp", "/opt/fonts/nanum"]);
+    expect(cfg.rhwpCli.fontPaths).toEqual(["/opt/fonts/hwp", "/opt/fonts/nanum"]);
   });
 
   it("routes office conversion to the sidecar when configured for standalone mode", () => {
@@ -19,6 +78,16 @@ describe("loadEngineConfig", () => {
   it("routes office conversion to the builtin engine for source-only deployments", () => {
     const cfg = loadEngineConfig({ OFFICE_ENGINE: "builtin" });
     expect(cfg.officeEngine).toBe("builtin");
+  });
+
+  it("defaults the builtin engine timeout to 120000ms", () => {
+    const cfg = loadEngineConfig({});
+    expect(cfg.builtinTimeoutMs).toBe(120_000);
+  });
+
+  it("reads the builtin engine timeout from BUILTIN_TIMEOUT_MS", () => {
+    const cfg = loadEngineConfig({ BUILTIN_TIMEOUT_MS: "90000" });
+    expect(cfg.builtinTimeoutMs).toBe(90_000);
   });
 
   it("includes commercial config only when fully specified", () => {
@@ -35,6 +104,15 @@ describe("loadEngineConfig", () => {
 });
 
 describe("loadAppConfig", () => {
+  it("binds to loopback when HOST is configured for local development", () => {
+    // Given
+    const env = { AUTH_SECRET: "s", HOST: "127.0.0.1" };
+    // When
+    const cfg = loadAppConfig(env);
+    // Then
+    expect(cfg.host).toBe("127.0.0.1");
+  });
+
   it("composes engines + s3 + auth + webOrigin with defaults", () => {
     const cfg = loadAppConfig({ AUTH_SECRET: "s" });
     expect(cfg.engines.gotenbergUrl).toBe("http://localhost:3000");
@@ -61,5 +139,67 @@ describe("loadAppConfig", () => {
 
   it("throws when AUTH_SECRET is missing", () => {
     expect(() => loadAppConfig({})).toThrow(/AUTH_SECRET/);
+  });
+
+  it("refuses DEV_AUTH=1 in production without ALLOW_DEV_AUTH", () => {
+    expect(() =>
+      loadAppConfig({ AUTH_SECRET: "s", NODE_ENV: "production", DEV_AUTH: "1" }),
+    ).toThrow(/DEV_AUTH/);
+  });
+
+  it("allows DEV_AUTH=1 in production when ALLOW_DEV_AUTH=1", () => {
+    const cfg = loadAppConfig({
+      AUTH_SECRET: "s",
+      NODE_ENV: "production",
+      DEV_AUTH: "1",
+      ALLOW_DEV_AUTH: "1",
+    });
+    expect(cfg.auth.devAuth).toBe(true);
+  });
+
+  it("refuses production Google OAuth when operation login is not ready", () => {
+    expect(() =>
+      loadAppConfig({
+        AUTH_SECRET: "s",
+        NODE_ENV: "production",
+        DEV_AUTH: "0",
+        WEB_ORIGIN: "http://172.19.1.151:8081",
+      }),
+    ).toThrow(/Google OAuth operation login is not ready/);
+  });
+
+  describe("trustProxy", () => {
+    it("defaults to trusting a single reverse-proxy hop (nginx)", () => {
+      // The old hardcoded `true` trusted the entire X-Forwarded-For chain, letting
+      // a client spoof req.ip and bypass per-IP rate limiting. One hop is the safe
+      // default for the documented single-nginx topology.
+      expect(loadAppConfig({ AUTH_SECRET: "s" }).trustProxy).toBe(1);
+    });
+
+    it("disables proxy trust when TRUST_PROXY=0 (matches README guidance)", () => {
+      expect(loadAppConfig({ AUTH_SECRET: "s", TRUST_PROXY: "0" }).trustProxy).toBe(false);
+    });
+
+    it("trusts N hops when TRUST_PROXY is a positive integer", () => {
+      expect(loadAppConfig({ AUTH_SECRET: "s", TRUST_PROXY: "2" }).trustProxy).toBe(2);
+    });
+
+    it("trusts the whole chain when TRUST_PROXY=true (legacy multi-proxy opt-in)", () => {
+      expect(loadAppConfig({ AUTH_SECRET: "s", TRUST_PROXY: "true" }).trustProxy).toBe(true);
+    });
+
+    it("falls back to a single hop for non-numeric junk", () => {
+      expect(loadAppConfig({ AUTH_SECRET: "s", TRUST_PROXY: "yes-please" }).trustProxy).toBe(1);
+    });
+  });
+
+  describe("maxActiveJobsPerUser", () => {
+    it("defaults the per-user active-job ceiling to 50", () => {
+      expect(loadAppConfig({ AUTH_SECRET: "s" }).maxActiveJobsPerUser).toBe(50);
+    });
+
+    it("reads the ceiling from MAX_ACTIVE_JOBS_PER_USER", () => {
+      expect(loadAppConfig({ AUTH_SECRET: "s", MAX_ACTIVE_JOBS_PER_USER: "10" }).maxActiveJobsPerUser).toBe(10);
+    });
   });
 });

@@ -14,3 +14,7 @@ apps/web/dist/
 e2e/test-results/
 .debug-journal.md
 standalone/release/
+apps/api/prisma/prisma/
+**/*.db
+newsletter/
+odysseus/
