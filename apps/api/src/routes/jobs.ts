@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import type { JobStatus } from "@hwptopdf/shared";
+import type { JobStatus, QualityStatus } from "@hwptopdf/shared";
 import type { AppDeps } from "../app.js";
 import { previewObjectKey, reportObjectKey } from "../convert/quality.js";
 import { defaultPreviewRenderer, PdfPreviewError } from "../pdf/preview.js";
@@ -47,6 +47,30 @@ function isMissingObject(err: unknown): boolean {
   return false;
 }
 
+function parseJobStatus(value: string | undefined): JobStatus | undefined {
+  switch (value) {
+    case "pending":
+    case "queued":
+    case "running":
+    case "success":
+    case "failed":
+      return value;
+    default:
+      return undefined;
+  }
+}
+
+function parseQualityStatus(value: string | undefined): QualityStatus | undefined {
+  switch (value) {
+    case "passed":
+    case "review":
+    case "failed":
+      return value;
+    default:
+      return undefined;
+  }
+}
+
 export function registerJobs(app: FastifyInstance, deps: AppDeps) {
   const pdfPreview = deps.pdfPreview ?? defaultPreviewRenderer();
 
@@ -59,11 +83,13 @@ export function registerJobs(app: FastifyInstance, deps: AppDeps) {
     return user;
   };
 
-  app.get("/api/jobs", async (req, reply) => {
+  app.get<{ Querystring: { readonly status?: string; readonly qualityStatus?: string } }>("/api/jobs", async (req, reply) => {
     const user = await auth(req, reply);
     if (!user) return;
-    const status = (req.query as { status?: JobStatus }).status;
-    return deps.jobs.list(user.id, { status });
+    return deps.jobs.list(user.id, {
+      status: parseJobStatus(req.query.status),
+      qualityStatus: parseQualityStatus(req.query.qualityStatus),
+    });
   });
 
   app.get("/api/jobs/:id", async (req, reply) => {
@@ -177,8 +203,8 @@ export function registerJobs(app: FastifyInstance, deps: AppDeps) {
       reportObjectKey(user.id, id),
       previewObjectKey(user.id, id),
     ].filter((k): k is string => k != null);
-    await Promise.allSettled(keys.map((key) => deps.storage.delete(key)));
     await deps.jobs.delete(user.id, id);
+    await Promise.allSettled(keys.map((key) => deps.storage.delete(key)));
     return reply.code(204).send();
   });
 

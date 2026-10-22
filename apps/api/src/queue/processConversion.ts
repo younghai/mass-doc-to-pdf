@@ -1,11 +1,18 @@
-import { normalizeQualityReport, previewObjectKey, reportObjectKey } from "../convert/quality.js";
-import { isReportingConverter, type ConversionResult } from "../convert/types.js";
-import { errorMessage as localizedErrorMessage } from "../convert/failure.js";
+import {
+  normalizeQualityReport,
+  previewObjectKey,
+  qualityGateReason,
+  reportObjectKey,
+  shouldRejectQuality,
+} from "../convert/quality.js";
+import { ConversionError, isReportingConverter, type ConversionResult } from "../convert/types.js";
+import { errorMessage as localizedErrorMessage, isPermanentFailure, rawErrorMessage } from "../convert/failure.js";
 import { defaultPreviewRenderer, type PdfPreviewRenderer } from "../pdf/preview.js";
 import type { Registry } from "../convert/registry.js";
 import type { Storage } from "../storage/s3.js";
 import type { JobService } from "../jobs/jobService.js";
 import type { QueuedJob } from "./jobQueue.js";
+import type { QualityStatus } from "@hwptopdf/shared";
 
 export interface WorkerDeps {
   readonly registry: Registry;
@@ -16,7 +23,18 @@ export interface WorkerDeps {
 
 export type ProcessResult =
   | { readonly ok: true; readonly engine: string; readonly durationMs: number }
-  | { readonly ok: false; readonly engine: string; readonly durationMs: number; readonly error: string };
+  | {
+      readonly ok: false;
+      readonly engine: string;
+      readonly qualityStatus: QualityStatus;
+      readonly durationMs: number;
+      readonly error: string;
+      readonly permanent: boolean;
+    };
+
+function logRawConversionFailure(jobId: string, err: unknown): void {
+  console.warn("worker conversion failed", { jobId, rawError: rawErrorMessage(err) });
+}
 
 /**
  * Convert one claimed job: read its source from storage, run the engine chain,
@@ -52,6 +70,30 @@ export async function processConversion(deps: WorkerDeps, job: QueuedJob): Promi
       durationMs,
     });
 
+    // Quality gate — shared with the inline /api/convert path via shouldRejectQuality.
+    // A rejected report means the PDF lost the original layout, so it must not be
+    // published as a success. Persist the report so the job detail can explain the
+    // verdict, then fail deterministically. The error is classified as
+    // quality_gate_failed → isPermanentFailure() → the worker fails it immediately
+    // instead of burning the retry budget re-running the identical engine chain.
+    if (shouldRejectQuality(report)) {
+      await deps.storage.put(
+        reportObjectKey(job.userId, job.id),
+        Buffer.from(JSON.stringify(report)),
+        "application/json",
+      );
+      const err = new ConversionError(report.selectedEngine, qualityGateReason(report));
+      logRawConversionFailure(job.id, err);
+      return {
+        ok: false,
+        engine: report.selectedEngine,
+        qualityStatus: report.status,
+        durationMs,
+        error: localizedErrorMessage(err),
+        permanent: isPermanentFailure(rawErrorMessage(err)),
+      };
+    }
+
     const outputKey = `${job.userId}/out/${job.id}.pdf`;
     await deps.storage.put(outputKey, result.pdf, "application/pdf");
     await deps.storage.put(
@@ -66,21 +108,27 @@ export async function processConversion(deps: WorkerDeps, job: QueuedJob): Promi
       const renderer = deps.pdfPreview ?? defaultPreviewRenderer();
       const png = await renderer.renderFirstPagePng(result.pdf);
       await deps.storage.put(previewObjectKey(job.userId, job.id), png, "image/png");
-    } catch {
-      // best-effort only
+    } catch (err) {
+      const rawError = err instanceof Error ? err.message : rawErrorMessage(err);
+      console.warn("worker preview pre-render failed", { jobId: job.id, rawError });
     }
     await deps.jobs.markSuccess(job.id, {
       engine: report.selectedEngine,
+      qualityStatus: report.status,
       durationMs,
       outputKey,
     });
     return { ok: true, engine: report.selectedEngine, durationMs };
   } catch (err) {
+    const rawError = err instanceof Error ? err.message : rawErrorMessage(err);
+    logRawConversionFailure(job.id, err);
     return {
       ok: false,
       engine: engineName,
+      qualityStatus: "failed",
       durationMs: Date.now() - started,
       error: localizedErrorMessage(err),
+      permanent: isPermanentFailure(rawError),
     };
   }
 }

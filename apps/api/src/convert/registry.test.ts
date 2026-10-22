@@ -6,6 +6,7 @@ describe("buildRegistry", () => {
   const base: EngineConfig = {
     gotenbergUrl: "http://g",
     hwpSidecarUrl: "http://h",
+    builtinTimeoutMs: 120_000,
     officeEngine: "gotenberg",
     rhwp: { enabled: true, pythonPath: "python3", timeoutMs: 120_000, fontPaths: [] },
     rhwpCli: {

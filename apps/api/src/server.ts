@@ -11,6 +11,9 @@ import { JobQueue } from "./queue/jobQueue.js";
 import { LocalFileStorage, S3Storage, makeS3Client, type Storage } from "./storage/s3.js";
 import { loadAppConfig } from "./config.js";
 import { prisma, initSqlitePragmas } from "./db.js";
+import { loadSearchProvider } from "./search/cloudflare.js";
+import { PopplerTextExtractor } from "./search/pdfText.js";
+import { DocumentSearchService, startSearchWorker } from "./search/service.js";
 
 const cfg = loadAppConfig(process.env);
 await initSqlitePragmas();
@@ -27,6 +30,14 @@ const storage: Storage =
     ? new LocalFileStorage(cfg.storage.root)
     : new S3Storage(makeS3Client(cfg.s3), cfg.s3.bucket);
 const jobs = new JobService(prisma);
+const searchProvider = (() => {
+  try { return loadSearchProvider(process.env); }
+  catch {
+    console.warn("document search disabled: required search environment configuration is missing or invalid");
+    return null;
+  }
+})();
+const search = new DocumentSearchService(prisma, storage, new PopplerTextExtractor(), searchProvider);
 // Probe local runtime engines once at boot and drop the unavailable ones from
 // the conversion chains, so a missing python/rhwp/chrome can't strand every job
 // in `review` with a "disabled" failure attempt.
@@ -59,13 +70,21 @@ const app = buildApp({
   storage,
   jobs,
   queue,
+  search,
   webOrigin: cfg.webOrigin,
   logger: { level: process.env.LOG_LEVEL ?? "info" },
   rateLimitMax: Number(process.env.RATE_LIMIT_MAX ?? 300),
+  trustProxy: cfg.trustProxy,
+  maxActiveJobsPerUser: cfg.maxActiveJobsPerUser,
   enginePreflight: preflight,
   engineEndpoints: { hwpSidecarUrl: cfg.engines.hwpSidecarUrl, gotenbergUrl: cfg.engines.gotenbergUrl },
   getSessionUser: (req) => app.getSessionUser(req),
 });
+
+if (search.enabled) {
+  const stopSearchWorker = startSearchWorker(search, () => app.log.error("document search worker failed; will retry"));
+  app.addHook("onClose", stopSearchWorker);
+}
 
 // Data retention sweep: delete jobs and their storage objects older than DATA_RETENTION_DAYS.
 const retentionDays = Number(process.env.DATA_RETENTION_DAYS ?? 30);
@@ -84,8 +103,8 @@ setInterval(async () => {
         reportObjectKey(job.userId, job.id),
         previewObjectKey(job.userId, job.id),
       ].filter((k): k is string => k != null);
+      await jobs.delete(job.userId, job.id);
       await Promise.allSettled(keys.map((key) => storage.delete(key)));
-      await prisma.conversionJob.delete({ where: { id: job.id } });
     }
     if (expired.length > 0) console.info(`retention sweep: deleted ${expired.length} expired job(s)`);
   } catch (err) {
@@ -105,7 +124,7 @@ if (cfg.auth.devAuth) {
 }
 
 app
-  .listen({ port: cfg.port, host: "0.0.0.0" })
+  .listen({ port: cfg.port, host: cfg.host })
   .then((addr) => app.log.info(`hwptopdf api listening on ${addr}`))
   .catch((err) => {
     app.log.error(err);

@@ -1,13 +1,19 @@
 import type { InputHTMLAttributes } from "react";
-import { forwardRef, useMemo, useRef, useState } from "react";
-import { Link } from "react-router-dom";
-import { useQueryClient } from "@tanstack/react-query";
-import type { ConversionMode, QualityReport } from "@hwptopdf/shared";
+import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import type { BatchDTO, ConversionMode, QualityReport } from "@hwptopdf/shared";
 import { ACCEPTED_EXTENSIONS, api, MAX_UPLOAD_BYTES } from "../api/client";
 import { humanSize } from "../format";
 import { QUALITY_MODE_HELP, QUALITY_MODE_LABEL, QUALITY_STATUS_LABEL, qualityStatus } from "../qualityView";
 
+// allow: SIZE_OK — SPEC-C keeps batch UI, queueing, polling, and restore state in this file.
 const MAX_BATCH_FILES = 1000;
+const MAX_CONCURRENT_UPLOADS = 5;
+const JOB_POLL_INTERVAL_MS = 2_000;
+const JOB_DELAY_BUDGET_MS = 120_000;
+const DELAYED_MESSAGE = "처리 지연 — 작업 큐에서 확인";
+const ACTIVE_BATCH_STORAGE_KEY = "hwptopdf.activeBatchId";
 
 const STATUS_LABEL = {
   ready: "등록 대기",
@@ -18,9 +24,21 @@ const STATUS_LABEL = {
   retryable: "재시도 가능",
   skipped: "제외",
   failed: "실패",
+  delayed: "처리 지연",
+  cancelled: "취소됨",
 } as const satisfies Record<BatchStatus, string>;
 
-type BatchStatus = "ready" | "uploading" | "queued" | "success" | "review" | "retryable" | "skipped" | "failed";
+type BatchStatus =
+  | "ready"
+  | "uploading"
+  | "queued"
+  | "success"
+  | "review"
+  | "retryable"
+  | "skipped"
+  | "failed"
+  | "delayed"
+  | "cancelled";
 
 type BatchItem = {
   readonly key: string;
@@ -29,6 +47,16 @@ type BatchItem = {
   readonly status: BatchStatus;
   readonly message: string;
   readonly jobId: string | null;
+  readonly registeredAtMs: number | null;
+};
+
+type BatchItemPatch = Partial<Pick<BatchItem, "status" | "message" | "jobId" | "registeredAtMs">>;
+
+type BatchRunInput = {
+  readonly readyItems: readonly BatchItem[];
+  readonly mode: ConversionMode;
+  readonly batchId: string;
+  readonly signal: AbortSignal;
 };
 
 type DirectoryInputProps = InputHTMLAttributes<HTMLInputElement> & {
@@ -59,29 +87,94 @@ function initialItem(file: File, index: number): BatchItem {
   const path = filePath(file);
   const key = `${path}:${file.size}:${index}`;
   if (!accepted(file)) {
-    return { key, file, path, status: "skipped", message: "지원하지 않는 형식", jobId: null };
+    return { key, file, path, status: "skipped", message: "지원하지 않는 형식", jobId: null, registeredAtMs: null };
   }
   if (file.size > MAX_UPLOAD_BYTES) {
-    return { key, file, path, status: "skipped", message: `${humanSize(MAX_UPLOAD_BYTES)} 초과`, jobId: null };
+    return {
+      key,
+      file,
+      path,
+      status: "skipped",
+      message: `${humanSize(MAX_UPLOAD_BYTES)} 초과`,
+      jobId: null,
+      registeredAtMs: null,
+    };
   }
-  return { key, file, path, status: "ready", message: "변환 시작 대기", jobId: null };
+  return { key, file, path, status: "ready", message: "변환 시작 대기", jobId: null, registeredAtMs: null };
 }
 
-function updateItem(
-  items: readonly BatchItem[],
-  key: string,
-  patch: Pick<BatchItem, "status" | "message" | "jobId">,
-): BatchItem[] {
+function updateItem(items: readonly BatchItem[], key: string, patch: BatchItemPatch): BatchItem[] {
   return items.map((item) => (item.key === key ? { ...item, ...patch } : item));
+}
+
+function assertNeverStatus(status: never): never {
+  throw new Error(`Unknown batch status: ${status}`);
+}
+
+function isProgressComplete(status: BatchStatus): boolean {
+  switch (status) {
+    case "success":
+    case "review":
+    case "retryable":
+    case "skipped":
+    case "failed":
+    case "delayed":
+    case "cancelled":
+      return true;
+    case "ready":
+    case "uploading":
+    case "queued":
+      return false;
+    default:
+      return assertNeverStatus(status);
+  }
+}
+
+function shouldShowMessage(item: BatchItem): boolean {
+  return item.status === "delayed" || item.status === "cancelled" || item.jobId === null;
+}
+
+function statusFromQuality(report: QualityReport | null): Pick<BatchItem, "status" | "message"> {
+  const status = qualityStatus(report);
+  if (status === "passed") return { status: "success", message: "변환 완료" };
+  if (status === "failed") return { status: "retryable", message: "재시도 가능" };
+  return { status: "review", message: report ? QUALITY_STATUS_LABEL[status] : "품질 리포트 확인 필요" };
+}
+
+function formatEta(total: number, completed: number, startedAtMs: number | null): string {
+  if (total === 0 || startedAtMs === null) return "ETA 계산 전";
+  if (completed === 0) return "ETA 계산 중";
+  const remaining = total - completed;
+  if (remaining <= 0) return "ETA 0초";
+  const elapsedMs = Date.now() - startedAtMs;
+  const remainingMs = Math.max(0, Math.round((elapsedMs / completed) * remaining));
+  return `ETA ${Math.ceil(remainingMs / 1_000)}초`;
+}
+
+function storedBatchId(): string | null {
+  if (typeof window === "undefined") return null;
+  return window.localStorage.getItem(ACTIVE_BATCH_STORAGE_KEY);
+}
+
+function restoredProgress(batch: BatchDTO) {
+  const completed = batch.success + batch.failed;
+  const remaining = batch.pending + batch.queued + batch.running;
+  const percent = batch.total === 0 ? 0 : Math.round((completed / batch.total) * 100);
+  return { completed, remaining, percent };
 }
 
 export function BatchUpload() {
   const qc = useQueryClient();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const queryBatchId = searchParams.get("batch");
   const inputRef = useRef<HTMLInputElement>(null);
   const [items, setItems] = useState<BatchItem[]>([]);
   const [warning, setWarning] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
   const [qualityMode, setQualityMode] = useState<ConversionMode>("precise");
+  const [batchStartedAtMs, setBatchStartedAtMs] = useState<number | null>(null);
+  const [activeBatchId, setActiveBatchId] = useState<string | null>(() => queryBatchId ?? storedBatchId());
+  const cancelControllerRef = useRef<AbortController | null>(null);
 
   const summary = useMemo(
     () => ({
@@ -96,35 +189,114 @@ export function BatchUpload() {
     [items],
   );
 
-  async function wait(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
-  }
+  const progress = useMemo(() => {
+    const completed = items.filter((item) => isProgressComplete(item.status)).length;
+    const remaining = Math.max(0, items.length - completed);
+    const percent = items.length === 0 ? 0 : Math.round((completed / items.length) * 100);
+    return { completed, remaining, percent, eta: formatEta(items.length, completed, batchStartedAtMs) };
+  }, [batchStartedAtMs, items]);
 
-  function statusFromQuality(report: QualityReport | null): Pick<BatchItem, "status" | "message"> {
-    const status = qualityStatus(report);
-    if (status === "passed") return { status: "success", message: "변환 완료" };
-    if (status === "failed") return { status: "retryable", message: "재시도 가능" };
-    return { status: "review", message: report ? QUALITY_STATUS_LABEL[status] : "품질 리포트 확인 필요" };
-  }
+  const queuedJobIds = useMemo(
+    () => items.flatMap((item) => (item.status === "queued" && item.jobId !== null ? [item.jobId] : [])),
+    [items],
+  );
 
-  async function watchJob(key: string, jobId: string): Promise<void> {
-    for (let index = 0; index < 60; index += 1) {
-      const job = await api.getJob(jobId);
-      if (job.status === "success") {
-        const report = await api.getQualityReport(jobId);
-        setItems((prev) => updateItem(prev, key, { ...statusFromQuality(report), jobId }));
-        return;
-      }
-      if (job.status === "failed") {
-        setItems((prev) => updateItem(prev, key, { status: "retryable", message: job.error ?? "재시도 가능", jobId }));
-        return;
-      }
-      await wait(2_000);
+  const jobsPoll = useQuery({
+    queryKey: ["batch-jobs", queuedJobIds],
+    queryFn: () => api.listJobs(),
+    enabled: queuedJobIds.length > 0,
+    refetchInterval: queuedJobIds.length > 0 ? JOB_POLL_INTERVAL_MS : false,
+  });
+
+  const batchPoll = useQuery({
+    queryKey: ["batch", activeBatchId],
+    queryFn: () => {
+      if (activeBatchId === null) throw new Error("batch id missing");
+      return api.getBatch(activeBatchId);
+    },
+    enabled: activeBatchId !== null && items.length === 0,
+    refetchInterval: activeBatchId !== null && items.length === 0 ? JOB_POLL_INTERVAL_MS : false,
+  });
+
+  const restoredBatch = items.length === 0 ? batchPoll.data : undefined;
+  const restored = restoredBatch ? restoredProgress(restoredBatch) : null;
+  const successfulOutputCount = restoredBatch ? restoredBatch.success : summary.success + summary.review;
+  const batchDownloadHref =
+    activeBatchId !== null && successfulOutputCount > 0 ? api.batchDownloadUrl(activeBatchId) : null;
+
+  useEffect(() => {
+    if (queryBatchId && queryBatchId !== activeBatchId) {
+      setActiveBatchId(queryBatchId);
+      window.localStorage.setItem(ACTIVE_BATCH_STORAGE_KEY, queryBatchId);
     }
+  }, [activeBatchId, queryBatchId]);
+
+  function setActiveBatch(batchId: string) {
+    setActiveBatchId(batchId);
+    window.localStorage.setItem(ACTIVE_BATCH_STORAGE_KEY, batchId);
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.set("batch", batchId);
+      return next;
+    });
   }
+
+  function clearActiveBatch() {
+    setActiveBatchId(null);
+    window.localStorage.removeItem(ACTIVE_BATCH_STORAGE_KEY);
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.delete("batch");
+      return next;
+    });
+  }
+
+  const completeSuccessfulJob = useCallback(async (key: string, jobId: string): Promise<void> => {
+    try {
+      const report = await api.getQualityReport(jobId);
+      setItems((prev) => updateItem(prev, key, { ...statusFromQuality(report), jobId, registeredAtMs: null }));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : errorMessage(error);
+      setItems((prev) =>
+        updateItem(prev, key, { status: "retryable", message, jobId, registeredAtMs: null }),
+      );
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!jobsPoll.data || queuedJobIds.length === 0) return;
+    const jobsById = new Map(jobsPoll.data.map((job) => [job.id, job]));
+    const now = Date.now();
+
+    for (const item of items) {
+      if (item.status !== "queued" || item.jobId === null) continue;
+      const job = jobsById.get(item.jobId);
+      if (job?.status === "success") {
+        void completeSuccessfulJob(item.key, item.jobId);
+        continue;
+      }
+      if (job?.status === "failed") {
+        setItems((prev) =>
+          updateItem(prev, item.key, {
+            status: "retryable",
+            message: job.error ?? "재시도 가능",
+            jobId: item.jobId,
+            registeredAtMs: null,
+          }),
+        );
+        continue;
+      }
+      if (item.registeredAtMs !== null && now - item.registeredAtMs >= JOB_DELAY_BUDGET_MS) {
+        setItems((prev) =>
+          updateItem(prev, item.key, { status: "delayed", message: DELAYED_MESSAGE, jobId: item.jobId }),
+        );
+      }
+    }
+  }, [completeSuccessfulJob, items, jobsPoll.data, jobsPoll.dataUpdatedAt, queuedJobIds.length]);
 
   function handleFiles(fileList: FileList | null) {
     const selected = Array.from(fileList ?? []);
+    clearActiveBatch();
     const limited = selected.slice(0, MAX_BATCH_FILES);
     setWarning(
       selected.length > MAX_BATCH_FILES
@@ -132,32 +304,75 @@ export function BatchUpload() {
         : null,
     );
     setItems(limited.map((file, index) => initialItem(file, index)));
+    setBatchStartedAtMs(null);
+  }
+
+  async function uploadOne(item: BatchItem, mode: ConversionMode, batchId: string): Promise<void> {
+    setItems((prev) =>
+      updateItem(prev, item.key, { status: "uploading", message: "작업 큐 등록 중", jobId: null, registeredAtMs: null }),
+    );
+    try {
+      const job = await api.upload(item.file, mode, batchId);
+      setItems((prev) =>
+        updateItem(prev, item.key, {
+          status: "queued",
+          message: "작업 큐에 등록됨",
+          jobId: job.id,
+          registeredAtMs: Date.now(),
+        }),
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : errorMessage(error);
+      setItems((prev) =>
+        updateItem(prev, item.key, { status: "failed", message, jobId: null, registeredAtMs: null }),
+      );
+    }
+  }
+
+  async function runUploadPool(input: BatchRunInput): Promise<void> {
+    let nextIndex = 0;
+    async function worker(): Promise<void> {
+      while (!input.signal.aborted) {
+        const item = input.readyItems[nextIndex];
+        if (item === undefined) return;
+        nextIndex += 1;
+        await uploadOne(item, input.mode, input.batchId);
+      }
+    }
+    const workerCount = Math.min(MAX_CONCURRENT_UPLOADS, input.readyItems.length);
+    await Promise.all(Array.from({ length: workerCount }, () => worker()));
+  }
+
+  function cancelBatch() {
+    cancelControllerRef.current?.abort();
+    setItems((prev) =>
+      prev.map((item) =>
+        item.status === "ready"
+          ? { ...item, status: "cancelled", message: "취소됨", jobId: null, registeredAtMs: null }
+          : item,
+      ),
+    );
   }
 
   async function startBatch() {
     if (running) return;
+    const readyItems = items.filter((item) => item.status === "ready");
+    if (readyItems.length === 0) return;
+    const controller = new AbortController();
+    const batchId = crypto.randomUUID();
+    cancelControllerRef.current = controller;
+    setActiveBatch(batchId);
+    setBatchStartedAtMs(Date.now());
     setRunning(true);
-    let current = items;
-    for (const item of items) {
-      if (item.status !== "ready") continue;
-      current = updateItem(current, item.key, { status: "uploading", message: "작업 큐 등록 중", jobId: null });
-      setItems(current);
-      try {
-        const job = await api.upload(item.file, qualityMode);
-        current = updateItem(current, item.key, { status: "queued", message: "작업 큐에 등록됨", jobId: job.id });
-        void watchJob(item.key, job.id).catch((error: unknown) => {
-          setItems((prev) =>
-            updateItem(prev, item.key, { status: "retryable", message: errorMessage(error), jobId: job.id }),
-          );
-        });
-      } catch (error) {
-        current = updateItem(current, item.key, { status: "failed", message: errorMessage(error), jobId: null });
-      }
-      setItems(current);
+    try {
+      await runUploadPool({ readyItems, mode: qualityMode, batchId, signal: controller.signal });
+    } finally {
+      qc.invalidateQueries({ queryKey: ["jobs"] });
+      qc.invalidateQueries({ queryKey: ["stats"] });
+      qc.invalidateQueries({ queryKey: ["batch", batchId] });
+      cancelControllerRef.current = null;
+      setRunning(false);
     }
-    qc.invalidateQueries({ queryKey: ["jobs"] });
-    qc.invalidateQueries({ queryKey: ["stats"] });
-    setRunning(false);
   }
 
   return (
@@ -165,11 +380,18 @@ export function BatchUpload() {
       <div className="section-head batch-head">
         <div>
           <h2>폴더 일괄 변환</h2>
-          <p>폴더에서 최대 1,000개 문서를 선택해 작업 큐에 순차 등록합니다.</p>
+          <p>폴더에서 최대 1,000개 문서를 선택해 작업 큐에 동시 등록합니다.</p>
         </div>
-        <Link to="/service/jobs" className="btn secondary">
-          작업 큐 보기
-        </Link>
+        <div className="batch-actions">
+          {batchDownloadHref ? (
+            <a href={batchDownloadHref} className="btn primary">
+              성공분 ZIP 다운로드
+            </a>
+          ) : null}
+          <Link to="/service/jobs" className="btn secondary">
+            작업 큐 보기
+          </Link>
+        </div>
       </div>
 
       <div className="batch-panel">
@@ -211,6 +433,11 @@ export function BatchUpload() {
           <button className="btn primary" type="button" onClick={startBatch} disabled={running || summary.ready === 0}>
             변환 시작
           </button>
+          {running ? (
+            <button className="btn secondary" type="button" onClick={cancelBatch}>
+              취소
+            </button>
+          ) : null}
           <button className="btn ghost" type="button" onClick={() => handleFiles(null)} disabled={running || items.length === 0}>
             초기화
           </button>
@@ -223,39 +450,80 @@ export function BatchUpload() {
         </p>
       )}
 
-      <div className="batch-summary" aria-label="일괄 변환 요약">
-        <div>
-          <strong>{summary.total}</strong>
-          <span>선택</span>
+      {restoredBatch && restored ? (
+        <div className="batch-summary" aria-label="복원된 배치 요약">
+          <div>
+            <span>전체</span>
+            <strong>{restoredBatch.total}</strong>
+          </div>
+          <div>
+            <span>대기/큐</span>
+            <strong>{restored.remaining}</strong>
+          </div>
+          <div>
+            <span>성공</span>
+            <strong>{restoredBatch.success}</strong>
+          </div>
+          <div>
+            <span>실패</span>
+            <strong>{restoredBatch.failed}</strong>
+          </div>
         </div>
-        <div>
-          <strong>{summary.ready}</strong>
-          <span>등록 가능</span>
+      ) : (
+        <div className="batch-summary" aria-label="일괄 변환 요약">
+          <div>
+            <strong>{summary.total}</strong>
+            <span>선택</span>
+          </div>
+          <div>
+            <strong>{summary.ready}</strong>
+            <span>등록 가능</span>
+          </div>
+          <div>
+            <strong>{summary.queued}</strong>
+            <span>큐 등록</span>
+          </div>
+          <div>
+            <strong>{summary.success}</strong>
+            <span>성공</span>
+          </div>
+          <div>
+            <strong>{summary.review}</strong>
+            <span>저품질 의심</span>
+          </div>
+          <div>
+            <strong>{summary.retryable}</strong>
+            <span>재시도 가능</span>
+          </div>
+          <div>
+            <strong>{summary.skippedOrFailed}</strong>
+            <span>제외/실패</span>
+          </div>
         </div>
-        <div>
-          <strong>{summary.queued}</strong>
-          <span>큐 등록</span>
+      )}
+
+      {items.length > 0 ? (
+        <div className="batch-progress" aria-label="전체 진행 상황">
+          <progress aria-label="전체 진행률" max={summary.total} value={progress.completed} />
+          <span>
+            {progress.completed} / {summary.total} 완료 · 남은 {progress.remaining}개 · {progress.percent}% · {progress.eta}
+          </span>
         </div>
-        <div>
-          <strong>{summary.success}</strong>
-          <span>성공</span>
+      ) : null}
+
+      {restoredBatch && restored ? (
+        <div className="batch-progress" aria-label="복원된 배치 진행 상황">
+          <progress aria-label="복원된 배치 진행률" max={restoredBatch.total} value={restored.completed} />
+          <span>
+            {restored.completed} / {restoredBatch.total} 완료 · 남은 {restored.remaining}개 · {restored.percent}%
+          </span>
         </div>
-        <div>
-          <strong>{summary.review}</strong>
-          <span>저품질 의심</span>
-        </div>
-        <div>
-          <strong>{summary.retryable}</strong>
-          <span>재시도 가능</span>
-        </div>
-        <div>
-          <strong>{summary.skippedOrFailed}</strong>
-          <span>제외/실패</span>
-        </div>
-      </div>
+      ) : null}
 
       {items.length === 0 ? (
-        <p className="empty">변환할 폴더를 선택하세요.</p>
+        <p className="empty">
+          {restoredBatch ? "복원된 배치의 파일별 상세는 작업 큐에 있습니다." : "변환할 폴더를 선택하세요."}
+        </p>
       ) : (
         <table className="jobs-table batch-table">
           <thead>
@@ -274,7 +542,7 @@ export function BatchUpload() {
                 <td>
                   <span className={`queue-status queue-status-${item.status}`}>{STATUS_LABEL[item.status]}</span>
                 </td>
-                <td>{item.jobId ? <Link to={`/service/jobs/${item.jobId}`}>작업 보기</Link> : item.message}</td>
+                <td>{shouldShowMessage(item) ? item.message : <Link to={`/service/jobs/${item.jobId}`}>작업 보기</Link>}</td>
               </tr>
             ))}
           </tbody>

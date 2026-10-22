@@ -2,7 +2,9 @@ import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
+import { confirmDelete } from "../confirm";
 import { StatusPill } from "../components/StatusPill";
+import { SearchIndexPanel } from "../components/SearchIndexPanel";
 import { humanSize, formatDate } from "../format";
 import type { QualityReport } from "@hwptopdf/shared";
 import { QUALITY_MODE_LABEL, QUALITY_STATUS_LABEL, gradeLabel, qualityAction, qualityStatus, warningLabel } from "../qualityView";
@@ -154,13 +156,14 @@ export function JobDetail() {
             <button
               className="btn ghost"
               type="button"
-              onClick={() => deleteMutation.mutate()}
+              onClick={() => { if (confirmDelete(job.filename)) deleteMutation.mutate(); }}
               disabled={deleteMutation.isPending}
             >
               삭제
             </button>
           </div>
           <PdfPreview jobId={job.id} />
+          <SearchIndexPanel jobId={job.id} filename={job.filename} qualityStatus={job.qualityStatus} />
           {qualityReport ? <QualityReportPanel report={qualityReport} /> : null}
         </>
       ) : job.status === "running" || job.status === "pending" || job.status === "queued" ? (
@@ -185,7 +188,7 @@ export function JobDetail() {
             <button
               className="btn ghost"
               type="button"
-              onClick={() => deleteMutation.mutate()}
+              onClick={() => { if (confirmDelete(job.filename)) deleteMutation.mutate(); }}
               disabled={deleteMutation.isPending}
             >
               삭제

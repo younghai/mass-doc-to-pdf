@@ -50,6 +50,12 @@ services:
       WEB_ORIGIN: http://localhost:8081
       PORT: "8000"
       USE_QUEUE: "1"
+      SEARCH_ENABLED: ${SEARCH_ENABLED:-0}
+      SEARCH_CF_ACCOUNT_ID: ${SEARCH_CF_ACCOUNT_ID:-}
+      SEARCH_CF_API_TOKEN: ${SEARCH_CF_API_TOKEN:-}
+      SEARCH_CF_NAMESPACE: ${SEARCH_CF_NAMESPACE:-default}
+      SEARCH_CF_INSTANCE: ${SEARCH_CF_INSTANCE:-}
+      SEARCH_ANSWER_MODEL: ${SEARCH_ANSWER_MODEL:-@cf/meta/llama-3.1-8b-instruct}
     volumes: ["api-data:/data"]
     ports: ["8010:8000"]
     depends_on: [gotenberg, hwp-sidecar, minio, createbucket]

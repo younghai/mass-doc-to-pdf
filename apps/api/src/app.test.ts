@@ -1,9 +1,21 @@
-import { describe, it, expect, vi } from "vitest";
+import { beforeAll, afterAll, describe, it, expect, vi } from "vitest";
 import { buildApp, type AppDeps } from "./app.js";
-import type { JobService } from "./jobs/jobService.js";
+import { JobService } from "./jobs/jobService.js";
 import type { Converter } from "./convert/types.js";
+import { multipartPayload } from "./test/multipart.js";
+import { setupTestDb } from "./test/testDb.js";
 
 const engine: Converter = { name: "x", async convert() { return Buffer.from(""); } };
+let db: ReturnType<typeof setupTestDb>;
+let userId: string;
+
+beforeAll(async () => {
+  db = setupTestDb();
+  const user = await db.prisma.user.create({ data: { email: "u@x.c" } });
+  userId = user.id;
+});
+
+afterAll(() => db.cleanup());
 
 function makeApp(rateLimitMax: number) {
   const deps: AppDeps = {
@@ -15,6 +27,37 @@ function makeApp(rateLimitMax: number) {
     getSessionUser: async () => null,
   };
   return buildApp(deps);
+}
+
+function makeConvertApp() {
+  const convertEngine: Converter = { name: "gotenberg", convert: async () => new Promise<Buffer>(() => {}) };
+  const deps: AppDeps = {
+    registry: { forFormat: () => convertEngine },
+    storage: { put: vi.fn(async () => {}), get: vi.fn(), delete: vi.fn() },
+    jobs: new JobService(db.prisma),
+    pdfPreview: { renderFirstPagePng: vi.fn(async () => Buffer.from("\x89PNG")) },
+    webOrigin: "http://localhost",
+    rateLimitMax: 100,
+    getSessionUser: async () => ({ id: userId, email: "u@x.c" }),
+  };
+  return buildApp(deps);
+}
+
+function multipartPayloadWithFieldCount(fieldCount: number) {
+  const boundary = "----testboundary";
+  const chunks: Buffer[] = [];
+  for (let i = 0; i < fieldCount; i += 1) {
+    chunks.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="field${i}"\r\n\r\nx\r\n`));
+  }
+  chunks.push(
+    Buffer.from(
+      `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="r.docx"\r\n` +
+        "Content-Type: application/octet-stream\r\n\r\n",
+    ),
+    Buffer.from("docbytes"),
+    Buffer.from(`\r\n--${boundary}--\r\n`),
+  );
+  return { body: Buffer.concat(chunks), headers: { "content-type": `multipart/form-data; boundary=${boundary}` } };
 }
 
 describe("per-IP rate limiting", () => {
@@ -34,6 +77,50 @@ describe("per-IP rate limiting", () => {
       const res = await app.inject({ method: "GET", url: "/health" });
       expect(res.statusCode).toBe(200);
     }
+  });
+
+  it("keys forwarded requests by the trusted hop instead of spoofed leftmost XFF entries", async () => {
+    const app = makeApp(3);
+    const spoofedChains = [
+      "198.51.100.10, 203.0.113.77",
+      "198.51.100.11, 203.0.113.77",
+      "198.51.100.12, 203.0.113.77",
+    ];
+    for (const forwardedFor of spoofedChains) {
+      const res = await app.inject({ method: "GET", url: "/api/stats", headers: { "x-forwarded-for": forwardedFor } });
+      expect(res.statusCode).toBe(401);
+    }
+
+    const res = await app.inject({
+      method: "GET",
+      url: "/api/stats",
+      headers: { "x-forwarded-for": "198.51.100.13, 203.0.113.77" },
+    });
+
+    expect(res.statusCode).toBe(429);
+  });
+});
+
+describe("multipart request limits", () => {
+  it("accepts a normal single-file conversion request", async () => {
+    const app = makeConvertApp();
+    const { body, headers } = multipartPayload("r.docx", Buffer.from("docbytes"));
+
+    const res = await app.inject({ method: "POST", url: "/api/convert", headers, payload: body });
+
+    expect(res.statusCode).toBe(202);
+    expect(res.json()).toMatchObject({ filename: "r.docx", status: "running" });
+  });
+
+  it("rejects multipart requests with more than twelve parts", async () => {
+    const app = makeConvertApp();
+    const beforeCount = await db.prisma.conversionJob.count();
+    const { body, headers } = multipartPayloadWithFieldCount(12);
+
+    const res = await app.inject({ method: "POST", url: "/api/convert", headers, payload: body });
+
+    expect(res.statusCode).toBe(413);
+    await expect(db.prisma.conversionJob.count()).resolves.toBe(beforeCount);
   });
 });
 
