@@ -203,8 +203,8 @@ export function registerJobs(app: FastifyInstance, deps: AppDeps) {
       reportObjectKey(user.id, id),
       previewObjectKey(user.id, id),
     ].filter((k): k is string => k != null);
-    await Promise.allSettled(keys.map((key) => deps.storage.delete(key)));
     await deps.jobs.delete(user.id, id);
+    await Promise.allSettled(keys.map((key) => deps.storage.delete(key)));
     return reply.code(204).send();
   });
 

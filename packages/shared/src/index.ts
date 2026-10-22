@@ -109,3 +109,4 @@ export interface StatsDTO {
 }
 
 export * from "./meeting.js";
+export * from "./search.js";

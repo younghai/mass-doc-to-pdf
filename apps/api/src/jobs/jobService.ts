@@ -1,5 +1,6 @@
 import type { PrismaClient } from "@prisma/client";
 import type { BatchDTO, BatchStatus, DocFormat, JobDTO, JobStatus, QualityStatus, StatsDTO } from "@hwptopdf/shared";
+import { tombstoneSearch } from "../search/lifecycle.js";
 
 export interface CreateInput {
   filename: string;
@@ -159,8 +160,11 @@ export class JobService {
   }
 
   async delete(userId: string, id: string): Promise<boolean> {
-    const res = await this.prisma.conversionJob.deleteMany({ where: { id, userId } });
-    return res.count > 0;
+    return this.prisma.$transaction(async (tx) => {
+      await tombstoneSearch(tx, userId, id);
+      const res = await tx.conversionJob.deleteMany({ where: { id, userId } });
+      return res.count > 0;
+    });
   }
 
   async get(userId: string, id: string): Promise<JobDTO | null> {

@@ -9,6 +9,7 @@ import { Upload } from "./pages/Upload";
 import { BatchUpload } from "./pages/BatchUpload";
 import { Jobs } from "./pages/Jobs";
 import { JobDetail } from "./pages/JobDetail";
+import { Search } from "./pages/Search";
 
 const meetingsEnabled = import.meta.env.VITE_ENABLE_MEETINGS === "1";
 const Meetings = meetingsEnabled
@@ -69,6 +70,14 @@ export function App() {
       ) : (
         <Route path="/labs/meetings/*" element={<Navigate to="/service" replace />} />
       )}
+      <Route
+        path="/search"
+        element={
+          <RequireAuth>
+            <Search />
+          </RequireAuth>
+        }
+      />
       <Route
         path="/service/jobs"
         element={

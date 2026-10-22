@@ -12,6 +12,7 @@ const PRIMARY_NAV = [
 const MEETINGS_NAV = { to: "/labs/meetings", label: "회의록 (실험)" } as const;
 
 const SECONDARY_NAV = [
+  { to: "/search", label: "문서 검색" },
   { to: "/service/jobs", label: "작업 큐" },
 ] as const;
 

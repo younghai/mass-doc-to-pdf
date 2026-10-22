@@ -19,11 +19,14 @@ import { registerBatches } from "./routes/batches.js";
 import { registerConvert } from "./routes/convert.js";
 import { registerJobs } from "./routes/jobs.js";
 import { registerStats } from "./routes/stats.js";
+import { registerSearch } from "./routes/search.js";
+import type { DocumentSearchService } from "./search/service.js";
 
 export interface AppDeps {
   registry: Registry;
   storage: Storage;
   jobs: JobService;
+  search?: DocumentSearchService;
   /** When provided, conversions are enqueued for the worker instead of run inline. */
   queue?: JobQueue;
   pdfPreview?: PdfPreviewRenderer;
@@ -120,6 +123,7 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     registerBatches(app, deps);
     registerJobs(app, deps);
     registerStats(app, deps);
+    registerSearch(app, deps);
   });
   return app;
 }
