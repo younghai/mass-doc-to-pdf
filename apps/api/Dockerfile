@@ -1,8 +1,8 @@
 # Build context is the repo root: docker build -f apps/api/Dockerfile .
-FROM node:20-slim AS base
+FROM node:24-slim AS base
 RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-certificates \
     && rm -rf /var/lib/apt/lists/*
-RUN corepack enable
+RUN npm install -g pnpm@10.32.1
 WORKDIR /app
 
 FROM base AS build
