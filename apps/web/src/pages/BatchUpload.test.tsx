@@ -262,8 +262,12 @@ test("marks a non-terminal job as delayed after the polling time budget is exhau
     await Promise.resolve();
   });
   expect(api.upload).toHaveBeenCalledTimes(1);
+  // Advance well past the 120s delay budget (an extra poll interval margin):
+  // the delayed marking is only evaluated on poll ticks, and React 19 does
+  // not flush the very last tick's effect inside act before the assertion,
+  // so stopping exactly at the budget boundary races the final tick.
   await act(async () => {
-    await vi.advanceTimersByTimeAsync(120_000);
+    await vi.advanceTimersByTimeAsync(120_000 + 3 * 2_000);
   });
 
   expect(screen.getByText("처리 지연 — 작업 큐에서 확인")).toBeInTheDocument();
