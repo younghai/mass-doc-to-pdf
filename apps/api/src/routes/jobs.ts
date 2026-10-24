@@ -123,11 +123,19 @@ export function registerJobs(app: FastifyInstance, deps: AppDeps) {
     return { userId: user.id, filename: raw.filename, outputKey: raw.outputKey };
   };
 
-  const readConvertedPdf = async (req: FastifyRequest, reply: FastifyReply): Promise<ConvertedPdf | null> => {
+  const readConvertedPdf = async (
+    req: FastifyRequest,
+    reply: FastifyReply,
+  ): Promise<{ readonly filename: string; readonly stream: NodeJS.ReadableStream } | ConvertedPdf | null> => {
     const raw = await readConvertedRaw(req, reply);
     if (!raw) return null;
-    const bytes = await deps.storage.get(raw.outputKey);
-    return { filename: raw.filename, bytes: Buffer.from(bytes) };
+    // Stream instead of buffering: a 20 MB PDF × concurrent downloads would
+    // otherwise spike API memory and delay the first byte until the whole
+    // object is read. Buffer only when the backend cannot stream (test stubs).
+    if (deps.storage.getStream) {
+      return { filename: raw.filename, stream: await deps.storage.getStream(raw.outputKey) };
+    }
+    return { filename: raw.filename, bytes: Buffer.from(await deps.storage.get(raw.outputKey)) };
   };
 
   const sendPdf = async (req: FastifyRequest, reply: FastifyReply, disposition: PdfDisposition) => {
@@ -137,7 +145,7 @@ export function registerJobs(app: FastifyInstance, deps: AppDeps) {
       .header("content-type", "application/pdf")
       .header("content-disposition", pdfDisposition(pdf.filename, disposition))
       .header("x-content-type-options", "nosniff")
-      .send(pdf.bytes);
+      .send("stream" in pdf ? pdf.stream : pdf.bytes);
   };
 
   app.get("/api/jobs/:id/download", async (req, reply) => {

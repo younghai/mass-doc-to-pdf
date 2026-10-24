@@ -161,23 +161,27 @@ export class DocumentSearchService {
     } finally { this.activeUsers.delete(userId); }
   }
 
-  /** One bounded page operation per claim. No HTTP request waits for indexing. */
-  async runOnce(): Promise<void> {
+  /**
+   * One bounded page operation per claim. No HTTP request waits for indexing.
+   * Returns true when a claim was processed (work happened, more may be
+   * queued) so the scheduler can keep a short tick; false when idle.
+   */
+  async runOnce(): Promise<boolean> {
     const provider = this.provider;
-    if (!provider) return;
+    if (!provider) return false;
     await this.markOrphans();
     const now = new Date();
     const candidate = await this.db.searchDocument.findFirst({
       where: { status: { in: ACTIVE_STATES }, nextAttemptAt: { lte: now }, OR: [{ leaseUntil: null }, { leaseUntil: { lt: now } }] },
       orderBy: { nextAttemptAt: "asc" },
     });
-    if (!candidate) return;
+    if (!candidate) return false;
     const token = randomUUID();
     const claim = await this.db.searchDocument.updateMany({
       where: { jobId: candidate.jobId, status: candidate.status, nextAttemptAt: { lte: now }, OR: [{ leaseUntil: null }, { leaseUntil: { lt: now } }] },
       data: { leaseToken: token, leaseUntil: new Date(Date.now() + LEASE_MS) },
     });
-    if (!claim.count) return;
+    if (!claim.count) return false;
     try {
       if (candidate.providerScope !== provider.scope) throw new Error("provider scope changed");
       if (candidate.status === "deleting") await this.deleteStep(candidate, token, provider);
@@ -185,11 +189,11 @@ export class DocumentSearchService {
         const job = await this.db.conversionJob.findFirst({ where: { id: candidate.jobId, userId: candidate.userId, status: "success", outputKey: candidate.outputKey } });
         if (!job) {
           await this.db.$transaction((tx) => tombstoneSearch(tx, candidate.userId, candidate.jobId));
-          return;
+          return true;
         }
         if (Date.now() - candidate.startedAt.getTime() > INDEX_DEADLINE_MS) {
           await this.db.searchDocument.updateMany({ where: { jobId: candidate.jobId, leaseToken: token, status: { not: "deleting" } }, data: { status: "failed", error: "색인 준비 시간이 24시간을 초과했습니다. 연결 상태를 확인한 뒤 다시 시도해 주세요." } });
-          return;
+          return true;
         }
         await provider.checkConfiguration();
         if (candidate.status === "queued" || candidate.status === "extracting") await this.extract(candidate, token);
@@ -211,6 +215,7 @@ export class DocumentSearchService {
     } finally {
       await this.db.searchDocument.updateMany({ where: { jobId: candidate.jobId, leaseToken: token }, data: { leaseToken: null, leaseUntil: null } });
     }
+    return true;
   }
 
   private async extract(doc: SearchDocument, token: string): Promise<void> {
@@ -220,11 +225,20 @@ export class DocumentSearchService {
     await this.db.$transaction(async (tx) => {
       const live = await tx.searchDocument.findFirst({ where: { jobId: doc.jobId, leaseToken: token, status: "extracting" } });
       if (!live) return;
-      for (const page of extracted.pages) {
-        await tx.searchPage.upsert({
-          where: { jobId_pageNumber: { jobId: doc.jobId, pageNumber: page.pageNumber } },
-          create: { jobId: doc.jobId, pageNumber: page.pageNumber, text: page.text, key: `${ownerFolder(doc.userId)}/${doc.generation}/page-${page.pageNumber}.txt` },
-          update: {},
+      // Bulk rewrite instead of one upsert per page: a large PDF means hundreds
+      // to thousands of sequential queries inside a single write transaction,
+      // stalling every other writer on the shared SQLite file. Pages are only
+      // consumed after this transaction commits, so replace-all is equivalent
+      // to the per-page upsert (extract is atomic — pages are never partial).
+      await tx.searchPage.deleteMany({ where: { jobId: doc.jobId } });
+      if (extracted.pages.length > 0) {
+        await tx.searchPage.createMany({
+          data: extracted.pages.map((page) => ({
+            jobId: doc.jobId,
+            pageNumber: page.pageNumber,
+            text: page.text,
+            key: `${ownerFolder(doc.userId)}/${doc.generation}/page-${page.pageNumber}.txt`,
+          })),
         });
       }
       await tx.searchDocument.update({ where: { jobId: doc.jobId }, data: {
@@ -290,13 +304,21 @@ export function startSearchWorker(service: DocumentSearchService, onError: () =>
   let stopped = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let pending: Promise<void> = Promise.resolve();
-  const schedule = () => {
+  // 1s while there is claimable work, 5s once idle: a fixed 1s tick meant the
+  // API ran ~3 SQLite queries per second forever on deployments where search is
+  // enabled but nothing is being indexed.
+  const ACTIVE_DELAY_MS = 1_000;
+  const IDLE_DELAY_MS = 5_000;
+  const schedule = (delayMs: number) => {
     if (stopped) return;
     timer = setTimeout(() => {
-      pending = service.runOnce().catch(onError).finally(schedule);
-    }, 1000);
+      pending = service
+        .runOnce()
+        .catch(onError)
+        .then((worked) => schedule(worked === true ? ACTIVE_DELAY_MS : IDLE_DELAY_MS));
+    }, delayMs);
     timer.unref();
   };
-  schedule();
+  schedule(IDLE_DELAY_MS);
   return async () => { stopped = true; if (timer) clearTimeout(timer); await pending; };
 }

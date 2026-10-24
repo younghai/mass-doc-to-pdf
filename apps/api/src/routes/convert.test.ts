@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
+import { MAX_UPLOAD_BYTES } from "@hwptopdf/shared";
 import { setupTestDb } from "../test/testDb.js";
 import { multipartPayload } from "../test/multipart.js";
 import { buildApp, type AppDeps } from "../app.js";
@@ -272,5 +273,33 @@ describe("POST /api/convert", () => {
     const { body, headers } = multipartPayload("r.docx", Buffer.from("x"));
     const res = await app.inject({ method: "POST", url: "/api/convert", headers, payload: body });
     expect(res.statusCode).toBe(401);
+  });
+
+  it("returns 413 when the upload exceeds the size limit instead of a 500", async () => {
+    const engine: Converter = { name: "x", async convert() { return Buffer.from("x"); } };
+    const { app } = makeApp(engine);
+    const oversized = Buffer.alloc(MAX_UPLOAD_BYTES + 1024, 0x61);
+    const { body, headers } = multipartPayload("big.docx", oversized);
+    const res = await app.inject({ method: "POST", url: "/api/convert", headers, payload: body });
+    expect(res.statusCode).toBe(413);
+  });
+
+  it("survives a markFailed bookkeeping failure without an unhandled rejection", async () => {
+    const failing: Converter = { name: "boom", async convert() { throw new ConversionError("boom", "exploded"); } };
+    const { app, jobs } = makeApp(failing);
+    const markFailed = vi.spyOn(jobs, "markFailed").mockRejectedValueOnce(new Error("database is locked"));
+    const { body, headers } = multipartPayload("f.docx", Buffer.from("x"));
+    const res = await app.inject({ method: "POST", url: "/api/convert", headers, payload: body });
+    expect(res.statusCode).toBe(202);
+    // Give the detached inline conversion a chance to (mis)handle the failure.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    markFailed.mockRestore();
+    // The API must remain fully operational: a follow-up conversion succeeds.
+    const ok: Converter = { name: "ok", async convert() { return Buffer.from("%PDF-1.7 fine"); } };
+    const { app: app2 } = makeApp(ok);
+    const second = await app2.inject({ method: "POST", url: "/api/convert?qualityMode=quick", headers, payload: body });
+    expect(second.statusCode).toBe(202);
+    const running = second.json() as { id: string };
+    await waitForJob(running.id, "success");
   });
 });

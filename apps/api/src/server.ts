@@ -89,24 +89,34 @@ if (search.enabled) {
 // Data retention sweep: delete jobs and their storage objects older than DATA_RETENTION_DAYS.
 const retentionDays = Number(process.env.DATA_RETENTION_DAYS ?? 30);
 const sweepIntervalMs = Number(process.env.RETENTION_SWEEP_INTERVAL_MS ?? 60 * 60_000);
+const RETENTION_SWEEP_BATCH = 500;
 setInterval(async () => {
   try {
     const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60_000);
-    const expired = await prisma.conversionJob.findMany({
-      where: { createdAt: { lt: cutoff } },
-      select: { id: true, userId: true, sourceKey: true, outputKey: true },
-    });
-    for (const job of expired) {
-      const keys = [
-        job.sourceKey,
-        job.outputKey,
-        reportObjectKey(job.userId, job.id),
-        previewObjectKey(job.userId, job.id),
-      ].filter((k): k is string => k != null);
-      await jobs.delete(job.userId, job.id);
-      await Promise.allSettled(keys.map((key) => storage.delete(key)));
+    // Delete in bounded batches: an unbounded findMany would load every expired
+    // row at once (with a long retention setting that is the whole table) and
+    // hold them in memory for the whole sequential delete loop.
+    let swept = 0;
+    for (;;) {
+      const expired = await prisma.conversionJob.findMany({
+        where: { createdAt: { lt: cutoff } },
+        select: { id: true, userId: true, sourceKey: true, outputKey: true },
+        take: RETENTION_SWEEP_BATCH,
+      });
+      for (const job of expired) {
+        const keys = [
+          job.sourceKey,
+          job.outputKey,
+          reportObjectKey(job.userId, job.id),
+          previewObjectKey(job.userId, job.id),
+        ].filter((k): k is string => k != null);
+        await jobs.delete(job.userId, job.id);
+        await Promise.allSettled(keys.map((key) => storage.delete(key)));
+      }
+      swept += expired.length;
+      if (expired.length < RETENTION_SWEEP_BATCH) break;
     }
-    if (expired.length > 0) console.info(`retention sweep: deleted ${expired.length} expired job(s)`);
+    if (swept > 0) console.info(`retention sweep: deleted ${swept} expired job(s)`);
   } catch (err) {
     console.error("retention sweep failed:", err);
   }
