@@ -7,10 +7,20 @@ services:
       MINIO_ROOT_PASSWORD: minio12345
     ports: ["127.0.0.1:9000:9000", "127.0.0.1:9001:9001"]
     volumes: ["minio-data:/data"]
+    # Readiness gate for OPEN-002: without this, depends_on below only waits
+    # for container start, so a slow MinIO boot let the api hit S3 before the
+    # server (let alone the bucket) existed — intermittent E2E timeouts.
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
 
   createbucket:
     image: minio/mc
-    depends_on: [minio]
+    depends_on:
+      minio:
+        condition: service_healthy
     entrypoint: >
       /bin/sh -c "until mc alias set m http://minio:9000 minio minio12345; do sleep 1; done;
       mc mb -p m/hwptopdf; exit 0;"
@@ -58,7 +68,15 @@ services:
       SEARCH_ANSWER_MODEL: ${SEARCH_ANSWER_MODEL:-@cf/meta/llama-3.1-8b-instruct}
     volumes: ["api-data:/data"]
     ports: ["8010:8000"]
-    depends_on: [gotenberg, hwp-sidecar, minio, createbucket]
+    depends_on:
+      gotenberg:
+        condition: service_started
+      hwp-sidecar:
+        condition: service_started
+      minio:
+        condition: service_healthy
+      createbucket:
+        condition: service_completed_successfully
     # The api applies Prisma migrations on boot. Gating the worker on this
     # healthcheck (below) keeps the worker from opening the SQLite file mid
     # migration — a concurrent connection makes `migrate deploy` fail with
