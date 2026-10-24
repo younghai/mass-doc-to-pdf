@@ -162,10 +162,11 @@ const hwpPrecise: Converter[] = [
 
 | 항목 | 내용 |
 |------|------|
-| 상태 | 미결 (모니터링) |
+| 상태 | **해결 (2026-10-23)** — compose 준비 게이팅 추가 |
 | 증상 | CI 환경에서 MinIO 컨테이너 초기화 지연으로 E2E 간헐적 타임아웃 |
-| 임시 대응 | E2E는 non-blocking으로 설정 (실패해도 PR 머지 차단 안 함) |
-| 해결 방안 | MinIO health check 대기 로직 추가 예정 |
+| 원인 | `api`의 `depends_on`이 리스트 형식이라 컨테이너 **시작**만 대기 — MinIO 부팅이 느리면 api가 서버/버킷 준비 전에 S3를 호출 |
+| 해결 | `minio`에 `/minio/health/live` healthcheck 추가, `createbucket`은 `service_healthy` 대기, `api`는 버킷 생성 완료(`service_completed_successfully`)까지 대기. dev·prod compose 모두 적용. CI(Docker Build 워크플로)에 `docker compose config -q` 검증 잡 추가로 compose 회귀 상시 가드 |
+| 임시 대응 | E2E는 non-blocking (유지 — E2E는 수동 실행이므로 PR 게이트 아님) |
 
 ---
 

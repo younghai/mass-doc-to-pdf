@@ -9,6 +9,7 @@ on:
       - "apps/web/nginx.conf"
       - "hwp-sidecar/**"
       - "docker-compose.yml"
+      - "docker-compose.prod.yml"
       - "package.json"
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"
@@ -44,3 +45,27 @@ jobs:
 
       - name: Build image
         run: docker build --file "${{ matrix.dockerfile }}" --tag "hwptopdf-${{ matrix.name }}:ci" "${{ matrix.context }}"
+
+  compose-validate:
+    name: Validate compose files
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      # Catch depends_on/healthcheck/interpolation regressions before they
+      # surface as intermittent E2E or deploy failures (OPEN-002 class).
+      - name: Validate docker-compose.yml
+        run: docker compose -f docker-compose.yml config --quiet
+
+      - name: Validate docker-compose.prod.yml
+        env:
+          MINIO_ROOT_USER: ci
+          MINIO_ROOT_PASSWORD: ci
+          AUTH_SECRET: ci
+          GOOGLE_CLIENT_ID: ci
+          GOOGLE_CLIENT_SECRET: ci
+          WEB_ORIGIN: http://localhost
+          HWPTOPDF_IMAGE_PREFIX: ghcr.io/younghai/mass-doc-to-pdf
+        run: docker compose -f docker-compose.prod.yml config --quiet
