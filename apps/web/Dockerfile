@@ -1,5 +1,5 @@
 # Build context is the repo root: docker build -f apps/web/Dockerfile .
-FROM node:24-slim AS build
+FROM node:25-slim AS build
 RUN npm install -g pnpm@10.32.1
 WORKDIR /app
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
