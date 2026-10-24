@@ -56,6 +56,12 @@ function logRawConversionFailure(jobId: string, err: unknown): void {
   console.warn("conversion failed", { jobId, rawError: rawErrorMessage(err) });
 }
 
+/**
+ * Run an inline conversion outside the request lifecycle. Contract: never
+ * rejects — a bookkeeping failure (e.g. a transient SQLite lock on markFailed)
+ * must not become an unhandled rejection, which kills the whole API process
+ * (Node's default unhandledRejection behavior) for one job's hiccup.
+ */
 async function finishConversion(
   deps: AppDeps,
   input: {
@@ -120,12 +126,19 @@ async function finishConversion(
       );
     }
     logRawConversionFailure(input.jobId, err);
-    await deps.jobs.markFailed(input.jobId, {
-      engine: err instanceof QualityGateError ? err.report.selectedEngine : input.engine.name,
-      qualityStatus: err instanceof QualityGateError ? err.report.status : "failed",
-      durationMs: Date.now() - started,
-      error: errorMessage(err),
-    });
+    try {
+      await deps.jobs.markFailed(input.jobId, {
+        engine: err instanceof QualityGateError ? err.report.selectedEngine : input.engine.name,
+        qualityStatus: err instanceof QualityGateError ? err.report.status : "failed",
+        durationMs: Date.now() - started,
+        error: errorMessage(err),
+      });
+    } catch (bookkeepingErr) {
+      console.error("markFailed bookkeeping failed (job left in previous state)", {
+        jobId: input.jobId,
+        rawError: rawErrorMessage(bookkeepingErr),
+      });
+    }
   }
 }
 
@@ -150,7 +163,8 @@ export function registerConvert(app: FastifyInstance, deps: AppDeps) {
     const format = raw.format as DocFormat;
     const engine = deps.registry.forFormat(format, { qualityMode: mode });
     const running = await deps.jobs.markRunning(id, { engine: engine.name });
-    void finishConversion(deps, { jobId: id, userId: user.id, filename: raw.filename, format, mode, data, engine });
+    void finishConversion(deps, { jobId: id, userId: user.id, filename: raw.filename, format, mode, data, engine })
+      .catch((fatal) => console.error("inline conversion crashed unexpectedly", { jobId: id, fatal }));
     return reply.code(202).send(running);
   });
 
@@ -166,7 +180,17 @@ export function registerConvert(app: FastifyInstance, deps: AppDeps) {
     const qualityMode = parseQualityMode(req.query.qualityMode);
     const file = await req.file();
     if (!file) return reply.code(400).send({ error: "field 'file' required" });
-    const data = await file.toBuffer();
+    let data: Buffer;
+    try {
+      data = await file.toBuffer();
+    } catch (err) {
+      // @fastify/multipart marks a fileSize-limit breach with statusCode 413;
+      // anything else is an unreadable body, not a server fault.
+      const tooLarge = (err as { statusCode?: number }).statusCode === 413;
+      return reply
+        .code(tooLarge ? 413 : 400)
+        .send({ error: tooLarge ? "파일 크기 제한을 초과했습니다." : "파일을 읽을 수 없습니다." });
+    }
     const batchId = cleanOptionalString(req.query.batchId) ?? multipartFieldString(file.fields.batchId);
 
     let meta;
@@ -208,7 +232,7 @@ export function registerConvert(app: FastifyInstance, deps: AppDeps) {
       mode: qualityMode,
       data,
       engine,
-    });
+    }).catch((fatal) => console.error("inline conversion crashed unexpectedly", { jobId: job.id, fatal }));
     return reply.code(202).send(running);
   });
 }

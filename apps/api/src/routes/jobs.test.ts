@@ -1,3 +1,4 @@
+import { Readable } from "node:stream";
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import { setupTestDb } from "../test/testDb.js";
 import { buildApp, type AppDeps } from "../app.js";
@@ -17,7 +18,7 @@ function missingObject(): Error {
   return Object.assign(new Error("NoSuchKey"), { code: "NoSuchKey" });
 }
 
-function makeApp() {
+function makeApp(options: { readonly streaming?: boolean } = {}) {
   const report: QualityReport = {
     version: 1,
     jobId: "1",
@@ -49,6 +50,15 @@ function makeApp() {
     delete: vi.fn(async (key: string) => {
       objects.delete(key);
     }),
+    // Streaming downloads are the production path (S3/Local both stream); the
+    // default stub omits getStream so legacy buffer-path tests stay covered.
+    ...(options.streaming
+      ? {
+          getStream: vi.fn(async (key: string) =>
+            key.includes("/report/") ? Readable.from([JSON.stringify(report)]) : Readable.from([pdf]),
+          ),
+        }
+      : {}),
   };
   const pdfPreview = {
     renderFirstPagePng: vi.fn(async () => png),
@@ -157,6 +167,20 @@ describe("jobs routes", () => {
     expect(dl.headers["content-disposition"]).toContain("attachment");
     const bad = await app.inject({ method: "GET", url: `/api/jobs/${badJob.id}/download` });
     expect(bad.statusCode).toBe(409);
+  });
+
+  it("download and preview stream the PDF when the storage backend supports it", async () => {
+    const { app } = makeApp({ streaming: true });
+    const list = (await app.inject({ method: "GET", url: "/api/jobs" })).json() as Array<{ id: string; status: string }>;
+    const okJob = list.find((j) => j.status === "success");
+    if (!okJob) throw new Error("missing job fixture");
+    const dl = await app.inject({ method: "GET", url: `/api/jobs/${okJob.id}/download` });
+    expect(dl.statusCode).toBe(200);
+    expect(dl.headers["content-type"]).toContain("application/pdf");
+    expect(dl.body).toEqual(pdf.toString());
+    const inline = await app.inject({ method: "GET", url: `/api/jobs/${okJob.id}/preview` });
+    expect(inline.statusCode).toBe(200);
+    expect(inline.headers["content-disposition"]).toContain("inline");
   });
 
   it("preview returns an inline PDF for iframe rendering", async () => {
