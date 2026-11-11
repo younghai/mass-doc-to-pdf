@@ -25,6 +25,56 @@ describe("buildQualityReport", () => {
     expect(report.warnings).toContain("rhwp_low_bytes_per_page_review");
   });
 
+  it("accepts a v0.9.0-sized minimal rhwp form without flagging it for review", () => {
+    // rhwp-cli v0.9.0 subsets fonts much harder: the sparse 2-page form class
+    // renders at ~22.6 KB (was 44 KB on v0.8.7). Such output must stay
+    // "passed" — the old 32 KB floor downgraded it to review.
+    const contentStream = deflateSync(Buffer.from("BT (신사업 보고서 양식 본문) Tj ET"));
+    const smallForm = Buffer.concat([
+      Buffer.from("%PDF-1.4\n1 0 obj << /Type /Page >> endobj\n"),
+      Buffer.from("2 0 obj << /Length " + contentStream.length + " >>\nstream\n"),
+      contentStream,
+      Buffer.from("\nendstream\nendobj\n%%EOF\n"),
+      Buffer.alloc(21_000, " "),
+    ]);
+    const report = buildQualityReport({
+      jobId: "job-v090",
+      filename: "form.hwp",
+      format: "hwp",
+      mode: "precise",
+      selectedEngine: "rhwp-cli-pdf",
+      pdf: smallForm,
+      sourceBytes: 13_824,
+      attempts: [{ engine: "rhwp-cli-pdf", status: "success", durationMs: 10 }],
+      warnings: [],
+      createdAt: "2026-11-12T00:00:00.000Z",
+    });
+    expect(report.status).toBe("passed");
+    expect(report.warnings).not.toContain("rhwp_small_pdf_review");
+    expect(report.warnings).not.toContain("rhwp_low_bytes_per_page_review");
+  });
+
+  it("still flags degenerate sub-16KB rhwp output for manual review", () => {
+    const degenerate = Buffer.concat([
+      Buffer.from("%PDF-1.4\n1 0 obj << /Type /Page >> endobj\n%%EOF\n"),
+      Buffer.alloc(10_000, " "),
+    ]);
+    const report = buildQualityReport({
+      jobId: "job-blank",
+      filename: "form.hwp",
+      format: "hwp",
+      mode: "precise",
+      selectedEngine: "rhwp",
+      pdf: degenerate,
+      sourceBytes: 500_000,
+      attempts: [{ engine: "rhwp", status: "success", durationMs: 10 }],
+      warnings: [],
+      createdAt: "2026-11-12T00:00:00.000Z",
+    });
+    expect(report.status).toBe("review");
+    expect(report.warnings).toContain("rhwp_small_pdf_review");
+  });
+
   it("marks very small Python rhwp HWP PDFs for manual review", () => {
     const report = buildQualityReport({
       jobId: "job-2",
