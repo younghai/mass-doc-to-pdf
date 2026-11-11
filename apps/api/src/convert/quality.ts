@@ -15,7 +15,14 @@ const PDF_PAGE_RE = /\/Type\s*\/Page\b/g;
 // and caps backtracking so a pathological buffer cannot blow up the regex engine.
 const PAGES_COUNT_FWD_RE = /\/Type\s*\/Pages\b[^>]{0,2048}?\/Count\s+(\d+)/g;
 const PAGES_COUNT_BWD_RE = /\/Count\s+(\d+)[^>]{0,2048}?\/Type\s*\/Pages\b/g;
-const RHWP_CLI_MIN_PDF_BYTES = 32 * 1024;
+// Absolute floor for rhwp-family HWP output. Measured legit minimum after the
+// rhwp-cli v0.9.0 bump (much better font subsetting): a sparse 2-page form
+// renders at ~22.6 KB vs 44 KB on v0.8.7, so the old 32 KB floor flagged valid
+// conversions for review. 16 KB stays well under every measured legitimate
+// document (min 22.6 KB) while still catching degenerate/blank output (a few
+// KB). Multi-page empties remain covered by the per-page floor below.
+// Re-measure on the next rhwp bump: docs/changes/2026-11-12-rhwp-cli-v0.9.0.md.
+const RHWP_CLI_MIN_PDF_BYTES = 16 * 1024;
 const RHWP_CLI_MIN_BYTES_PER_PAGE = 4 * 1024;
 
 export function reportObjectKey(userId: string, jobId: string): string {
