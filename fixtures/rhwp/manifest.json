@@ -1,0 +1,35 @@
+{
+  "_comment": "Pinned sample documents for the rhwp bump gate and CI engine smoke. Sourced from the upstream edwardkim/rhwp repository (MIT) test assets; sha256-pinned to raw URLs. Do not edit URLs without re-pinning checksums. Fetch with: standalone/scripts/rhwp-bump-gate.sh fetch <dir>",
+  "source_repo": "edwardkim/rhwp",
+  "source_license": "MIT",
+  "fixtures": [
+    {
+      "name": "plain-note.hwp",
+      "url": "https://raw.githubusercontent.com/edwardkim/rhwp/main/mydocs/pr/assets/planet6897_followup_20261011/inputs/plain-note-gana.hwp",
+      "sha256": "9118ec160f81f7c45a3e1f122481b53af7079fc8657b76f43732dcde3312293b",
+      "class": "sparse-note",
+      "why": "Small text-only class: the canary for small-PDF threshold calibration (the v0.9.0 44KB->22.6KB incident class)."
+    },
+    {
+      "name": "law.hwp",
+      "url": "https://raw.githubusercontent.com/edwardkim/rhwp/main/mydocs/pr/assets/pr8319_evidence_alignment_20261027/official-inputs/pr8050-law-current.hwp",
+      "sha256": "6371d1fcf8f9574430c0df8e6141cd9d7e6b2c11aa10bc3afeeb8e5cdf07cf04",
+      "class": "legal-text",
+      "why": "Dense legal text layout: catches line-breaking and justification regressions."
+    },
+    {
+      "name": "columns.hwpx",
+      "url": "https://raw.githubusercontent.com/edwardkim/rhwp/main/mydocs/pr/assets/computed_split_host_20261022/inputs/with-column.hwpx",
+      "sha256": "1b199c5125c9be352d8b3e0345f2ca0c1ada1524a39ae31205316e38035b13ae",
+      "class": "columned-hwpx",
+      "why": "HWPX format + multi-column layout: covers the second input format and column pagination."
+    },
+    {
+      "name": "standards.hwp",
+      "url": "https://raw.githubusercontent.com/edwardkim/rhwp/main/mydocs/pr/assets/issue7445/1480000-201900042-chemical-labeling-standards.hwp",
+      "sha256": "4382eabadb86cde5730a7e7b972cea1828fea0c1c743a654c2a430cc19ae26c0",
+      "class": "medium-regulatory",
+      "why": "Medium multi-page public regulatory document: exercises tables/sections at realistic size."
+    }
+  ]
+}
