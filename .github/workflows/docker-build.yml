@@ -10,6 +10,9 @@ on:
       - "hwp-sidecar/**"
       - "docker-compose.yml"
       - "docker-compose.prod.yml"
+      - "apps/api/src/convert/workers/rhwp_worker.py"
+      - "fixtures/rhwp/manifest.json"
+      - "standalone/scripts/rhwp-bump-gate.sh"
       - "package.json"
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"
@@ -69,3 +72,39 @@ jobs:
           WEB_ORIGIN: http://localhost
           HWPTOPDF_IMAGE_PREFIX: ghcr.io/younghai/mass-doc-to-pdf
         run: docker compose -f docker-compose.prod.yml config --quiet
+
+  engine-smoke:
+    name: Engine smoke (rhwp in image)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      # First-ever in-CI validation that the pinned rhwp engine actually loads
+      # and converts inside the built image. The image installs rhwp-python and
+      # repoints its bundled freetype at the distro copy (FT_Palette_Select
+      # workaround); until now a silent breakage there only surfaced at deploy
+      # as every HWP job falling back to H2Orestart (2026-06-14 rehearsal class).
+      - name: Fetch pinned fixtures
+        run: bash standalone/scripts/rhwp-bump-gate.sh fetch fixtures-cache
+
+      - name: Build API image
+        run: docker build --file apps/api/Dockerfile --tag hwptopdf-api:smoke .
+
+      - name: Convert fixtures inside the image
+        run: |
+          set -eu
+          fails=0
+          for f in fixtures-cache/*.hwp fixtures-cache/*.hwpx; do
+            [ -f "$f" ] || continue
+            name="$(basename "$f")"
+            echo "::group::smoke $name"
+            if docker run --rm                  -v "$PWD/fixtures-cache:/fixtures:ro"                  hwptopdf-api:smoke                  /bin/sh -c "cd /app/apps/api && /opt/rhwp/bin/python3 src/convert/workers/rhwp_worker.py /fixtures/$name /tmp/out.pdf && head -c 5 /tmp/out.pdf | grep -q '%PDF-'"; then
+              echo "ok: $name"
+            else
+              echo "FAILED: $name"; fails=$((fails+1))
+            fi
+            echo "::endgroup::"
+          done
+          [ "$fails" -eq 0 ] || { echo "$fails fixture(s) failed in-image conversion" >&2; exit 1; }
