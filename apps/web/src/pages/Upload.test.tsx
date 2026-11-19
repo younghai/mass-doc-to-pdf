@@ -3,7 +3,7 @@ import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderWithProviders } from "../test/render";
 import { Upload } from "./Upload";
-import { api, MAX_UPLOAD_BYTES } from "../api/client";
+import { api, MAX_UPLOAD_BYTES, ACCEPTED_EXTENSIONS } from "../api/client";
 import type { JobDTO } from "@hwptopdf/shared";
 
 vi.mock("../api/client", async (importOriginal) => {
@@ -32,7 +32,10 @@ beforeEach(() => {
 
 test("lists accepted file types", () => {
   renderWithProviders(<Upload />);
-  expect(screen.getByText(/hwp, hwpx, docx/)).toBeInTheDocument();
+  // 안내 문구는 ACCEPTED_EXTENSIONS에서 파생되므로 8종 전체를 나열해야 한다
+  // (회귀 가드: 5종 하드코딩 시 이 어설션이 실패).
+  const help = screen.getByText(/지원 형식/).textContent ?? "";
+  for (const ext of ACCEPTED_EXTENSIONS) expect(help).toContain(ext.slice(1));
   expect(screen.getByText(/최대 20.0 MB/)).toBeInTheDocument();
 });
 
