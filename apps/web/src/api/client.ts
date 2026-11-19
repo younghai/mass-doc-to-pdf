@@ -86,3 +86,7 @@ export const ACCEPTED_EXTENSIONS = [
 ];
 
 export { MAX_UPLOAD_BYTES };
+
+/** Display string for supported formats, derived from ACCEPTED_EXTENSIONS so
+ * the help text can never drift from the actual `accept` filter again. */
+export const SUPPORTED_FORMATS_LABEL = ACCEPTED_EXTENSIONS.map((ext) => ext.slice(1)).join(", ");

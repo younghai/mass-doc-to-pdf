@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { ACCEPTED_EXTENSIONS, MAX_UPLOAD_BYTES } from "../api/client";
+import { ACCEPTED_EXTENSIONS, MAX_UPLOAD_BYTES, SUPPORTED_FORMATS_LABEL } from "../api/client";
 import { humanSize } from "../format";
 
 export function Dropzone({
@@ -41,7 +41,7 @@ export function Dropzone({
         }}
       />
       <p>파일을 끌어다 놓거나 클릭하여 선택</p>
-      <small>지원 형식: hwp, hwpx, docx, xlsx, pptx · 최대 {humanSize(MAX_UPLOAD_BYTES)}</small>
+      <small>지원 형식: {SUPPORTED_FORMATS_LABEL} · 최대 {humanSize(MAX_UPLOAD_BYTES)}</small>
     </div>
   );
 }

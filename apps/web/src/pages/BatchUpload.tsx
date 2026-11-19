@@ -3,7 +3,7 @@ import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from "r
 import { Link, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { BatchDTO, ConversionMode, QualityReport } from "@hwptopdf/shared";
-import { ACCEPTED_EXTENSIONS, api, MAX_UPLOAD_BYTES } from "../api/client";
+import { ACCEPTED_EXTENSIONS, api, MAX_UPLOAD_BYTES, SUPPORTED_FORMATS_LABEL } from "../api/client";
 import { humanSize } from "../format";
 import { QUALITY_MODE_HELP, QUALITY_MODE_LABEL, QUALITY_STATUS_LABEL, qualityStatus } from "../qualityView";
 
@@ -408,7 +408,7 @@ export function BatchUpload() {
         />
         <div>
           <strong>폴더 선택</strong>
-          <p>지원 형식: hwp, hwpx, docx, xlsx, pptx · 파일당 최대 {humanSize(MAX_UPLOAD_BYTES)}</p>
+          <p>지원 형식: {SUPPORTED_FORMATS_LABEL} · 파일당 최대 {humanSize(MAX_UPLOAD_BYTES)}</p>
         </div>
         <div className="quality-mode batch-mode" role="group" aria-label="품질 모드">
           {(["precise", "quick"] as const).map((mode) => (
